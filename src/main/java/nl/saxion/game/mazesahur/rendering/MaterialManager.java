@@ -8,95 +8,109 @@ import com.badlogic.gdx.graphics.g3d.attributes.ColorAttribute;
 import com.badlogic.gdx.graphics.g3d.attributes.FloatAttribute;
 import com.badlogic.gdx.graphics.g3d.attributes.TextureAttribute;
 
+import java.util.EnumMap;
+import java.util.Map;
+
 /**
  * Manages material creation and texture loading for realistic PBR-like rendering.
- * Handles diffuse, normal, and specular properties for proper light interaction.
+ * Uses TextureSet and SurfaceType for organized, OOP-based texture management.
  *
  * @author Olivier, Luuk, Russell, Tim
- * @version 1.0
+ * @version 2.0
  */
 public class MaterialManager {
 
-    // Texture references
-    private Texture wallDiffuse;
-    private Texture wallNormal;
-    private Texture floorDiffuse;
-    private Texture floorNormal;
+    // Texture sets organized by surface type
+    private final Map<SurfaceType, TextureSet> textureSets;
+
+    /**
+     * Creates a new material manager.
+     */
+    public MaterialManager() {
+        this.textureSets = new EnumMap<>(SurfaceType.class);
+    }
 
     /**
      * Loads all textures with proper filtering and wrapping.
      */
     public void loadTextures() {
-        // Load wall textures
-        wallDiffuse = loadTexture("textures/wall/mossy_brick_diff_4k.jpg");
-        wallNormal = loadTexture("textures/wall/mossy_brick_nor_gl_4k.jpg");
+        // Load texture sets for each surface type
+        for (final SurfaceType surfaceType : SurfaceType.values()) {
+            final TextureSet textureSet = surfaceType.createTextureSet();
+            textureSet.loadTextures();
 
-        // Load floor textures
-        floorDiffuse = loadTexture("textures/floor/concrete_floor_damaged_01_diff_4k.jpg");
-        floorNormal = loadTexture("textures/floor/concrete_floor_damaged_01_nor_gl_4k.jpg");
-    }
-
-    /**
-     * Loads a texture with mipmaps and proper filtering.
-     *
-     * @param path Internal file path
-     * @return Loaded texture
-     */
-    private Texture loadTexture(final String path) {
-        final Texture texture = new Texture(Gdx.files.internal(path), true);
-        texture.setFilter(Texture.TextureFilter.MipMapLinearLinear, Texture.TextureFilter.Linear);
-        texture.setWrap(Texture.TextureWrap.Repeat, Texture.TextureWrap.Repeat);
-        return texture;
+            if (textureSet.isValid()) {
+                textureSets.put(surfaceType, textureSet);
+                Gdx.app.log("MaterialManager", "Loaded " + surfaceType.name() + " textures");
+            } else {
+                Gdx.app.error("MaterialManager", "Failed to load " + surfaceType.name() + " textures");
+            }
+        }
     }
 
     /**
      * Creates a realistic wall material with proper PBR-like properties.
-     * Rough stone with very minimal reflectivity.
+     * Uses full texture set including diffuse, normal, AO, roughness, and displacement.
      *
      * @return Wall material
      */
     public Material createWallMaterial() {
-        final Material material = new Material();
-
-        // Diffuse texture and color (lighter to reflect flashlight better)
-        material.set(TextureAttribute.createDiffuse(wallDiffuse));
-        material.set(ColorAttribute.createDiffuse(new Color(0.75f, 0.75f, 0.75f, 1f)));
-
-        // Normal map for surface detail
-        material.set(TextureAttribute.createNormal(wallNormal));
-
-        // Low specular - rough stone barely reflects
-        material.set(ColorAttribute.createSpecular(new Color(0.05f, 0.05f, 0.05f, 1f)));
-        material.set(FloatAttribute.createShininess(2.0f));
-
-        // Moderate ambient to catch light
-        material.set(ColorAttribute.createAmbient(new Color(0.5f, 0.5f, 0.5f, 1f)));
-
-        return material;
+        return createMaterial(SurfaceType.WALL);
     }
 
     /**
      * Creates a realistic floor material with proper PBR-like properties.
-     * Rough concrete with minimal reflectivity and slight dampness.
+     * Uses full texture set including diffuse, normal, AO, roughness, and displacement.
      *
      * @return Floor material
      */
     public Material createFloorMaterial() {
+        return createMaterial(SurfaceType.FLOOR);
+    }
+
+    /**
+     * Creates a material for a specific surface type using its full texture set.
+     *
+     * @param surfaceType The surface type to create material for
+     * @return Material with all available texture maps applied
+     */
+    private Material createMaterial(final SurfaceType surfaceType) {
         final Material material = new Material();
+        final TextureSet textureSet = textureSets.get(surfaceType);
 
-        // Diffuse texture and color (lighter to reflect flashlight better)
-        material.set(TextureAttribute.createDiffuse(floorDiffuse));
-        material.set(ColorAttribute.createDiffuse(new Color(0.85f, 0.85f, 0.88f, 1f)));
+        if (textureSet == null || !textureSet.isValid()) {
+            Gdx.app.error("MaterialManager", "Invalid texture set for " + surfaceType.name());
+            return material;
+        }
 
-        // Normal map for surface detail
-        material.set(TextureAttribute.createNormal(floorNormal));
+        // Apply diffuse texture and color tint
+        if (textureSet.getDiffuseMap() != null) {
+            material.set(TextureAttribute.createDiffuse(textureSet.getDiffuseMap()));
+            material.set(ColorAttribute.createDiffuse(surfaceType.getDiffuseTint()));
+        }
 
-        // Low specular - damp concrete has slight sheen
-        material.set(ColorAttribute.createSpecular(new Color(0.08f, 0.08f, 0.08f, 1f)));
-        material.set(FloatAttribute.createShininess(2.5f));
+        // Apply normal map for surface detail
+        if (textureSet.getNormalMap() != null) {
+            material.set(TextureAttribute.createNormal(textureSet.getNormalMap()));
+        }
 
-        // Higher ambient to catch more light
-        material.set(ColorAttribute.createAmbient(new Color(0.6f, 0.6f, 0.65f, 1f)));
+        // Apply displacement/height map for parallax occlusion mapping
+        if (textureSet.getDisplacementMap() != null) {
+            // Create custom texture attribute for height map
+            material.set(new TextureAttribute(TextureAttribute.Bump, textureSet.getDisplacementMap()));
+        }
+
+        // Apply specular properties (roughness affects this)
+        material.set(ColorAttribute.createSpecular(surfaceType.getSpecularColor()));
+        material.set(FloatAttribute.createShininess(surfaceType.getShininess()));
+
+        // Apply ambient color (AO map enhances this)
+        material.set(ColorAttribute.createAmbient(surfaceType.getAmbientColor()));
+
+        // Note: AO and roughness maps are loaded but require custom shader support
+        // - AO map: Can be used to multiply with ambient lighting in shader
+        // - Roughness map: Can control specular intensity per-pixel in shader
+        // - Displacement map: NOW IMPLEMENTED with parallax occlusion mapping!
 
         return material;
     }
@@ -128,18 +142,10 @@ public class MaterialManager {
      * Disposes of all loaded textures.
      */
     public void dispose() {
-        if (wallDiffuse != null) {
-            wallDiffuse.dispose();
+        for (final TextureSet textureSet : textureSets.values()) {
+            textureSet.dispose();
         }
-        if (wallNormal != null) {
-            wallNormal.dispose();
-        }
-        if (floorDiffuse != null) {
-            floorDiffuse.dispose();
-        }
-        if (floorNormal != null) {
-            floorNormal.dispose();
-        }
+        textureSets.clear();
     }
 }
 

@@ -43,6 +43,9 @@ public class SpotlightShader implements Shader {
     private float fogStart = 8.0f;        // Distance where fog starts (meters)
     private float fogEnd = 35.0f;         // Distance where fog is maximum
 
+    // Parallax occlusion mapping parameters
+    private float heightScale = 0.06f;    // Depth scale for parallax effect (conservative but visible)
+
     public SpotlightShader() {
         final String vertexShader = Gdx.files.internal("shaders/spotlight.vertex.glsl").readString();
         final String fragmentShader = Gdx.files.internal("shaders/spotlight.fragment.glsl").readString();
@@ -90,6 +93,9 @@ public class SpotlightShader implements Shader {
         program.setUniformf("u_fogStart", fogStart);
         program.setUniformf("u_fogEnd", fogEnd);
 
+        // Set parallax occlusion mapping parameters
+        program.setUniformf("u_heightScale", heightScale);
+
         // Set spotlight parameters
         if (enabled) {
             program.setUniformf("u_spotPosition", spotPosition);
@@ -128,9 +134,48 @@ public class SpotlightShader implements Shader {
 
         program.setUniformMatrix("u_normalMatrix", normalMatrix);
 
-        // Bind texture
-        final int textureUnit = context.textureBinder.bind(renderable.material.get(com.badlogic.gdx.graphics.g3d.attributes.TextureAttribute.class, com.badlogic.gdx.graphics.g3d.attributes.TextureAttribute.Diffuse).textureDescription.texture);
-        program.setUniformi("u_diffuseTexture", textureUnit);
+        // Bind textures with proper fallbacks
+        final com.badlogic.gdx.graphics.g3d.attributes.TextureAttribute diffuseAttr =
+            renderable.material.get(com.badlogic.gdx.graphics.g3d.attributes.TextureAttribute.class,
+                com.badlogic.gdx.graphics.g3d.attributes.TextureAttribute.Diffuse);
+
+        final com.badlogic.gdx.graphics.g3d.attributes.TextureAttribute normalAttr =
+            renderable.material.get(com.badlogic.gdx.graphics.g3d.attributes.TextureAttribute.class,
+                com.badlogic.gdx.graphics.g3d.attributes.TextureAttribute.Normal);
+
+        final com.badlogic.gdx.graphics.g3d.attributes.TextureAttribute heightAttr =
+            renderable.material.get(com.badlogic.gdx.graphics.g3d.attributes.TextureAttribute.class,
+                com.badlogic.gdx.graphics.g3d.attributes.TextureAttribute.Bump);
+
+        // Bind diffuse texture
+        if (diffuseAttr != null && diffuseAttr.textureDescription.texture != null) {
+            final int unit = context.textureBinder.bind(diffuseAttr.textureDescription.texture);
+            program.setUniformi("u_diffuseTexture", unit);
+        }
+
+        // Bind normal map (use diffuse as fallback)
+        if (normalAttr != null && normalAttr.textureDescription.texture != null) {
+            final int unit = context.textureBinder.bind(normalAttr.textureDescription.texture);
+            program.setUniformi("u_normalTexture", unit);
+        } else if (diffuseAttr != null && diffuseAttr.textureDescription.texture != null) {
+            final int unit = context.textureBinder.bind(diffuseAttr.textureDescription.texture);
+            program.setUniformi("u_normalTexture", unit);
+        }
+
+        // Bind height map and set flag
+        if (heightAttr != null && heightAttr.textureDescription.texture != null) {
+            final int unit = context.textureBinder.bind(heightAttr.textureDescription.texture);
+            program.setUniformi("u_heightTexture", unit);
+            program.setUniformf("u_hasHeightMap", 1.0f);
+        } else {
+            // Disable parallax occlusion mapping
+            program.setUniformf("u_hasHeightMap", 0.0f);
+            // Still bind a texture to prevent shader errors (use diffuse)
+            if (diffuseAttr != null && diffuseAttr.textureDescription.texture != null) {
+                final int unit = context.textureBinder.bind(diffuseAttr.textureDescription.texture);
+                program.setUniformi("u_heightTexture", unit);
+            }
+        }
 
         // Render
         renderable.meshPart.render(program);
@@ -187,6 +232,25 @@ public class SpotlightShader implements Shader {
     public void setFogRange(float start, float end) {
         this.fogStart = start;
         this.fogEnd = end;
+    }
+
+    /**
+     * Sets the height scale for parallax occlusion mapping.
+     * Higher values = more pronounced depth effect.
+     *
+     * @param scale Height scale (recommended: 0.05 - 0.15)
+     */
+    public void setHeightScale(float scale) {
+        this.heightScale = scale;
+    }
+
+    /**
+     * Gets the current height scale for parallax occlusion mapping.
+     *
+     * @return Height scale value
+     */
+    public float getHeightScale() {
+        return heightScale;
     }
 }
 
