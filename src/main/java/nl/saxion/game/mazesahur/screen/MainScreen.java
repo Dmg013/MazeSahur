@@ -1,4 +1,4 @@
-package nl.saxion.game.mazesahur;
+package nl.saxion.game.mazesahur.screen;
 
 import nl.saxion.gameapp.GameApp;
 import nl.saxion.gameapp.screens.ScalableGameScreen;
@@ -6,6 +6,9 @@ import nl.saxion.gameapp.screens.ScalableGameScreen;
 /**
  * Main game screen for MazeSahur.
  * This is the primary screen where the game logic will be implemented.
+ *
+ * @author Olivier, Luuk, Russell, Tim
+ * @version 1.0
  */
 public class MainScreen extends ScalableGameScreen {
 

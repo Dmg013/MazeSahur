@@ -1,4 +1,4 @@
-package nl.saxion.game.mazesahur;
+package nl.saxion.game.mazesahur.rendering;
 
 import com.badlogic.gdx.Gdx;
 import com.badlogic.gdx.graphics.Camera;
@@ -13,6 +13,9 @@ import com.badlogic.gdx.utils.GdxRuntimeException;
 /**
  * Custom shader for realistic spotlight rendering.
  * Implements proper cone-based spotlight with distance attenuation and smooth falloff.
+ *
+ * @author Olivier, Luuk, Russell, Tim
+ * @version 1.0
  */
 public class SpotlightShader implements Shader {
     private ShaderProgram program;

@@ -1,4 +1,4 @@
-package nl.saxion.game.mazesahur;
+package nl.saxion.game.mazesahur.rendering;
 
 import com.badlogic.gdx.Gdx;
 import com.badlogic.gdx.graphics.Color;
@@ -11,6 +11,9 @@ import com.badlogic.gdx.graphics.g3d.attributes.TextureAttribute;
 /**
  * Manages material creation and texture loading for realistic PBR-like rendering.
  * Handles diffuse, normal, and specular properties for proper light interaction.
+ *
+ * @author Olivier, Luuk, Russell, Tim
+ * @version 1.0
  */
 public class MaterialManager {
 
@@ -137,24 +140,6 @@ public class MaterialManager {
         if (floorNormal != null) {
             floorNormal.dispose();
         }
-    }
-
-    /**
-     * Gets the wall diffuse texture.
-     *
-     * @return Wall texture
-     */
-    public Texture getWallDiffuse() {
-        return wallDiffuse;
-    }
-
-    /**
-     * Gets the floor diffuse texture.
-     *
-     * @return Floor texture
-     */
-    public Texture getFloorDiffuse() {
-        return floorDiffuse;
     }
 }
 

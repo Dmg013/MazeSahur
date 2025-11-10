@@ -1,4 +1,4 @@
-package nl.saxion.game.mazesahur;
+package nl.saxion.game.mazesahur.screen;
 
 import com.badlogic.gdx.Gdx;
 import com.badlogic.gdx.Input;
@@ -17,6 +17,9 @@ import nl.saxion.gameapp.screens.ScalableGameScreen;
 /**
  * Screen that displays a 3D model loaded from an OBJ file.
  * The model rotates continuously for demonstration.
+ *
+ * @author Olivier, Luuk, Russell, Tim
+ * @version 1.0
  */
 public class ModelViewerScreen extends ScalableGameScreen {
     private PerspectiveCamera camera;
