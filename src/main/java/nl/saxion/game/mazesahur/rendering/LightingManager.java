@@ -1,11 +1,14 @@
-package nl.saxion.game.mazesahur;
+package nl.saxion.game.mazesahur.rendering;
 
-import com.badlogic.gdx.graphics.Color;
+import nl.saxion.game.mazesahur.config.GameConfig;
 import com.badlogic.gdx.math.Vector3;
 
 /**
  * Manages lighting with custom shader-based spotlight.
  * Provides realistic flashlight with proper cone attenuation.
+ *
+ * @author Olivier, Luuk, Russell, Tim
+ * @version 1.0
  */
 public class LightingManager {
     private final SpotlightShader shader;
@@ -14,7 +17,7 @@ public class LightingManager {
     // Flashlight parameters
     private final Vector3 spotPosition = new Vector3();
     private final Vector3 spotDirection = new Vector3(0, 0, -1);
-    private float baseIntensity = 1.5f;
+    private float baseIntensity = GameConfig.FLASHLIGHT_INTENSITY;
 
     // Bobbing effect
     private float bobbingTime = 0f;
@@ -23,12 +26,20 @@ public class LightingManager {
     private static final float SIDE_BOBBING_AMOUNT = 0.06f;
     private static final float INTENSITY_FLICKER_AMOUNT = 0.1f;
 
+    /**
+     * Creates a new lighting manager with custom shader.
+     */
     public LightingManager() {
         shader = new SpotlightShader();
     }
 
     /**
      * Updates flashlight position and direction with realistic bobbing.
+     *
+     * @param playerPosition Player's world position
+     * @param cameraDirection Camera's forward direction
+     * @param delta Time since last frame
+     * @param isMoving Whether the player is moving
      */
     public void updateFlashlight(final Vector3 playerPosition, final Vector3 cameraDirection,
                                   final float delta, final boolean isMoving) {
@@ -77,6 +88,8 @@ public class LightingManager {
 
     /**
      * Gets the custom shader for rendering.
+     *
+     * @return The spotlight shader
      */
     public SpotlightShader getShader() {
         return shader;
@@ -91,6 +104,8 @@ public class LightingManager {
 
     /**
      * Checks if flashlight is enabled.
+     *
+     * @return True if flashlight is on
      */
     public boolean isFlashlightEnabled() {
         return flashlightEnabled;
