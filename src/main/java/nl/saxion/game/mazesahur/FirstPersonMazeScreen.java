@@ -2,20 +2,14 @@ package nl.saxion.game.mazesahur;
 
 import com.badlogic.gdx.Gdx;
 import com.badlogic.gdx.Input;
-import com.badlogic.gdx.graphics.Color;
 import com.badlogic.gdx.graphics.GL20;
 import com.badlogic.gdx.graphics.PerspectiveCamera;
 import com.badlogic.gdx.graphics.VertexAttributes;
-import com.badlogic.gdx.graphics.g3d.Environment;
 import com.badlogic.gdx.graphics.g3d.Material;
 import com.badlogic.gdx.graphics.g3d.Model;
 import com.badlogic.gdx.graphics.g3d.ModelBatch;
 import com.badlogic.gdx.graphics.g3d.ModelInstance;
-import com.badlogic.gdx.graphics.g3d.attributes.ColorAttribute;
 import com.badlogic.gdx.graphics.g3d.attributes.TextureAttribute;
-import com.badlogic.gdx.graphics.g3d.attributes.FloatAttribute;
-import com.badlogic.gdx.graphics.g3d.environment.DirectionalLight;
-import com.badlogic.gdx.graphics.g3d.environment.PointLight;
 import com.badlogic.gdx.graphics.g3d.loader.ObjLoader;
 import com.badlogic.gdx.graphics.g3d.utils.ModelBuilder;
 import com.badlogic.gdx.math.Vector3;
@@ -41,7 +35,8 @@ public class FirstPersonMazeScreen extends ScalableGameScreen {
 
     private PerspectiveCamera camera;
     private ModelBatch modelBatch;
-    private Environment environment;
+    private LightingManager lightingManager;
+    private MaterialManager materialManager;
     private MazeGenerator maze;
     private List<ModelInstance> wallInstances;
     private ModelInstance floorInstance;
@@ -50,11 +45,6 @@ public class FirstPersonMazeScreen extends ScalableGameScreen {
     private Model sahurModel;
     private ModelInstance sahurInstance;
     private com.badlogic.gdx.graphics.Texture sahurTexture;
-    private com.badlogic.gdx.graphics.Texture floorTexture;
-    private com.badlogic.gdx.graphics.Texture wallTexture;
-    private com.badlogic.gdx.graphics.Texture wallNormalMap;
-    private com.badlogic.gdx.graphics.Texture floorNormalMap;
-    private PointLight playerLight; // Dynamic light that follows the player
 
     private final Vector3 playerPosition;
     private final Vector3 sahurPosition;
@@ -138,27 +128,16 @@ public class FirstPersonMazeScreen extends ScalableGameScreen {
         camera.far = 100f;
         camera.update();
 
-        // Setup rendering
-        modelBatch = new ModelBatch();
+        // Initialize lighting manager for horror atmosphere
+        lightingManager = new LightingManager();
 
-        // Setup enhanced lighting for better shading
-        environment = new Environment();
+        // Setup rendering with custom shader
+        final SpotlightShaderProvider shaderProvider = new SpotlightShaderProvider(lightingManager.getShader());
+        modelBatch = new ModelBatch(shaderProvider);
 
-        // Lower ambient light for more dramatic lighting effects
-        environment.set(new ColorAttribute(ColorAttribute.AmbientLight, 0.2f, 0.2f, 0.25f, 1f));
-
-        // Main directional light from above-front (stronger for visible shading)
-        environment.add(new DirectionalLight().set(1.2f, 1.2f, 1.0f, -0.2f, -0.8f, -0.5f));
-
-        // Secondary directional light for backfill
-        environment.add(new DirectionalLight().set(0.4f, 0.4f, 0.5f, 0.3f, -0.5f, 0.8f));
-
-        // Create dynamic point light that follows player (warm light)
-        playerLight = new PointLight();
-        playerLight.set(1.5f, 1.3f, 1.0f, // Warm orange-yellow color
-                        playerPosition.x, playerPosition.y, playerPosition.z,
-                        30f); // Intensity/radius
-        environment.add(playerLight);
+        // Initialize material manager
+        materialManager = new MaterialManager();
+        materialManager.loadTextures();
 
         // Generate LARGE maze with wide corridors
         final int mazeSize = 25; // Much larger maze = longer to solve
@@ -256,79 +235,13 @@ public class FirstPersonMazeScreen extends ScalableGameScreen {
     private void buildMazeModels() {
         final ModelBuilder modelBuilder = new ModelBuilder();
 
-        // Load wall textures (diffuse + normal map)
-        wallTexture = new com.badlogic.gdx.graphics.Texture(
-            Gdx.files.internal("textures/wall/mossy_brick_diff_4k.jpg"),
-            true // Enable mipmaps for better quality at distance
-        );
-        wallTexture.setFilter(
-            com.badlogic.gdx.graphics.Texture.TextureFilter.MipMapLinearLinear,
-            com.badlogic.gdx.graphics.Texture.TextureFilter.Linear
-        );
-        wallTexture.setWrap(
-            com.badlogic.gdx.graphics.Texture.TextureWrap.Repeat,
-            com.badlogic.gdx.graphics.Texture.TextureWrap.Repeat
-        );
-
-        wallNormalMap = new com.badlogic.gdx.graphics.Texture(
-            Gdx.files.internal("textures/wall/mossy_brick_nor_gl_4k.jpg"),
-            true
-        );
-        wallNormalMap.setFilter(
-            com.badlogic.gdx.graphics.Texture.TextureFilter.MipMapLinearLinear,
-            com.badlogic.gdx.graphics.Texture.TextureFilter.Linear
-        );
-        wallNormalMap.setWrap(
-            com.badlogic.gdx.graphics.Texture.TextureWrap.Repeat,
-            com.badlogic.gdx.graphics.Texture.TextureWrap.Repeat
-        );
-
-        // Create wall model with texture and normal map
-        final Material wallMaterial = new Material(
-            TextureAttribute.createDiffuse(wallTexture),
-            TextureAttribute.createNormal(wallNormalMap),
-            ColorAttribute.createDiffuse(Color.WHITE),
-            ColorAttribute.createSpecular(0.3f, 0.3f, 0.3f, 1f), // Specular highlights
-            FloatAttribute.createShininess(8f) // Shininess for specular
-        );
+        // Create wall model with realistic material
+        final Material wallMaterial = materialManager.createWallMaterial();
         wallModel = modelBuilder.createBox(WALL_SIZE, WALL_HEIGHT, WALL_SIZE, wallMaterial,
                 VertexAttributes.Usage.Position | VertexAttributes.Usage.Normal | VertexAttributes.Usage.TextureCoordinates);
 
-        // Load floor textures (diffuse + normal map)
-        floorTexture = new com.badlogic.gdx.graphics.Texture(
-            Gdx.files.internal("textures/floor/concrete_floor_damaged_01_diff_4k.jpg"),
-            true // Enable mipmaps for better quality at distance
-        );
-        floorTexture.setFilter(
-            com.badlogic.gdx.graphics.Texture.TextureFilter.MipMapLinearLinear,
-            com.badlogic.gdx.graphics.Texture.TextureFilter.Linear
-        );
-        floorTexture.setWrap(
-            com.badlogic.gdx.graphics.Texture.TextureWrap.Repeat,
-            com.badlogic.gdx.graphics.Texture.TextureWrap.Repeat
-        );
-
-        floorNormalMap = new com.badlogic.gdx.graphics.Texture(
-            Gdx.files.internal("textures/floor/concrete_floor_damaged_01_nor_gl_4k.jpg"),
-            true
-        );
-        floorNormalMap.setFilter(
-            com.badlogic.gdx.graphics.Texture.TextureFilter.MipMapLinearLinear,
-            com.badlogic.gdx.graphics.Texture.TextureFilter.Linear
-        );
-        floorNormalMap.setWrap(
-            com.badlogic.gdx.graphics.Texture.TextureWrap.Repeat,
-            com.badlogic.gdx.graphics.Texture.TextureWrap.Repeat
-        );
-
-        // Create floor model with texture and normal map (flat square - scaled up)
-        final Material floorMaterial = new Material(
-            TextureAttribute.createDiffuse(floorTexture),
-            TextureAttribute.createNormal(floorNormalMap),
-            ColorAttribute.createDiffuse(Color.WHITE),
-            ColorAttribute.createSpecular(0.2f, 0.2f, 0.2f, 1f), // Subtle specular
-            FloatAttribute.createShininess(4f) // Lower shininess for concrete
-        );
+        // Create floor model with realistic material
+        final Material floorMaterial = materialManager.createFloorMaterial();
         final float floorSize = maze.getWidth() * WALL_SIZE;
         floorModel = modelBuilder.createBox(floorSize, 0.1f, floorSize, floorMaterial,
                 VertexAttributes.Usage.Position | VertexAttributes.Usage.Normal | VertexAttributes.Usage.TextureCoordinates);
@@ -342,8 +255,7 @@ public class FirstPersonMazeScreen extends ScalableGameScreen {
         );
 
         // Scale texture coordinates to repeat the texture across the floor
-        // The texture will repeat based on the floor size to avoid stretching
-        final float textureScale = floorSize / (WALL_SIZE * 2f); // Repeat every 2 wall units
+        final float textureScale = floorSize / (WALL_SIZE * 2f);
         for (final com.badlogic.gdx.graphics.g3d.Material mat : floorInstance.materials) {
             final TextureAttribute texAttr = (TextureAttribute) mat.get(TextureAttribute.Diffuse);
             if (texAttr != null) {
@@ -352,7 +264,7 @@ public class FirstPersonMazeScreen extends ScalableGameScreen {
             }
         }
 
-        // Create wall instances (scaled to 2x2 grid)
+        // Create wall instances
         wallInstances = new ArrayList<>();
         for (int y = 0; y < maze.getHeight(); y++) {
             for (int x = 0; x < maze.getWidth(); x++) {
@@ -393,12 +305,14 @@ public class FirstPersonMazeScreen extends ScalableGameScreen {
             com.badlogic.gdx.graphics.Texture.TextureWrap.ClampToEdge
         );
 
-        // Create instance
+        // Create instance with horror material
         sahurInstance = new ModelInstance(sahurModel);
 
-        // Apply texture
-        for (final com.badlogic.gdx.graphics.g3d.Material material : sahurInstance.materials) {
-            material.set(TextureAttribute.createDiffuse(sahurTexture));
+        // Apply material from material manager
+        final Material sahurMaterial = materialManager.createSahurMaterial(sahurTexture);
+        for (final com.badlogic.gdx.graphics.g3d.Material mat : sahurInstance.materials) {
+            mat.clear();
+            mat.set(sahurMaterial);
         }
 
         // Set initial position and scale
@@ -421,45 +335,61 @@ public class FirstPersonMazeScreen extends ScalableGameScreen {
         updateSahurAI(delta);
         updateCamera();
 
-        // Update dynamic point light to follow player
-        playerLight.position.set(playerPosition);
+        // Check if player is moving for flashlight bobbing effect
+        final boolean isMoving = Gdx.input.isKeyPressed(Input.Keys.W)
+            || Gdx.input.isKeyPressed(Input.Keys.A)
+            || Gdx.input.isKeyPressed(Input.Keys.S)
+            || Gdx.input.isKeyPressed(Input.Keys.D);
 
-        // Clear screen
-        Gdx.gl.glClearColor(0.1f, 0.1f, 0.15f, 1f);
+        // Update lighting (flashlight follows player with bobbing)
+        lightingManager.updateFlashlight(playerPosition, camera.direction, delta, isMoving);
+
+        // Clear screen with pure black (dark horror atmosphere)
+        Gdx.gl.glClearColor(0.0f, 0.0f, 0.0f, 1f);
         Gdx.gl.glClear(GL20.GL_COLOR_BUFFER_BIT | GL20.GL_DEPTH_BUFFER_BIT);
 
-        // Render 3D maze
+        // Render 3D maze with custom shader (handled by ShaderProvider)
         modelBatch.begin(camera);
-        modelBatch.render(floorInstance, environment);
+        modelBatch.render(floorInstance);
         for (final ModelInstance wall : wallInstances) {
-            modelBatch.render(wall, environment);
+            modelBatch.render(wall);
         }
         modelBatch.end();
 
         // Render Sahur with ESP (no depth test) so you can see him through walls
         Gdx.gl.glDisable(GL20.GL_DEPTH_TEST);
         modelBatch.begin(camera);
-        modelBatch.render(sahurInstance, environment);
+        modelBatch.render(sahurInstance);
         modelBatch.end();
         Gdx.gl.glEnable(GL20.GL_DEPTH_TEST);
 
         // Draw 2D UI
         GameApp.startSpriteRendering();
         GameApp.drawText("ui", "MazeSahur - First Person", 20, getWorldHeight() - 20, "white");
-        GameApp.drawText("ui", "WASD to move, Mouse to look", 20, getWorldHeight() - 50, "white");
+        GameApp.drawText("ui", "WASD to move, Mouse to look, F to toggle flashlight", 20, getWorldHeight() - 50, "white");
+
+        // Show flashlight status
+        final String flashlightStatus = lightingManager.isFlashlightEnabled() ? "ON" : "OFF";
+        final String flashlightColor = lightingManager.isFlashlightEnabled() ? "green-500" : "red-500";
+        GameApp.drawText("ui", "Flashlight: " + flashlightStatus, 20, getWorldHeight() - 80, flashlightColor);
 
         // Show Sahur debug info
         final float distance = playerPosition.dst(sahurPosition);
-        GameApp.drawText("ui", "Sahur distance: " + (int)distance, 20, getWorldHeight() - 80, "red-500");
-        GameApp.drawText("ui", "AI State: " + aiState, 20, getWorldHeight() - 110, "amber-500");
+        GameApp.drawText("ui", "Sahur distance: " + (int)distance, 20, getWorldHeight() - 110, "red-500");
+        GameApp.drawText("ui", "AI State: " + aiState, 20, getWorldHeight() - 140, "amber-500");
 
         if (aiState == AIState.PURSUING) {
             final int timeRemaining = (int) (CHASE_MEMORY_DURATION - timeSincePlayerSeen);
-            GameApp.drawText("ui", "Pursuit time: " + timeRemaining + "s", 20, getWorldHeight() - 140, "red-500");
+            GameApp.drawText("ui", "Pursuit time: " + timeRemaining + "s", 20, getWorldHeight() - 170, "red-500");
         }
 
         GameApp.drawText("ui", "ESC to exit", 20, 30, "amber-500");
         GameApp.endSpriteRendering();
+
+        // Handle flashlight toggle
+        if (Gdx.input.isKeyJustPressed(Input.Keys.F)) {
+            lightingManager.toggleFlashlight();
+        }
 
         // Handle exit
         if (Gdx.input.isKeyJustPressed(Input.Keys.ESCAPE)) {
@@ -973,26 +903,20 @@ public class FirstPersonMazeScreen extends ScalableGameScreen {
         if (wallModel != null) {
             wallModel.dispose();
         }
-        if (wallTexture != null) {
-            wallTexture.dispose();
-        }
-        if (wallNormalMap != null) {
-            wallNormalMap.dispose();
-        }
         if (floorModel != null) {
             floorModel.dispose();
-        }
-        if (floorTexture != null) {
-            floorTexture.dispose();
-        }
-        if (floorNormalMap != null) {
-            floorNormalMap.dispose();
         }
         if (sahurModel != null) {
             sahurModel.dispose();
         }
         if (sahurTexture != null) {
             sahurTexture.dispose();
+        }
+        if (materialManager != null) {
+            materialManager.dispose();
+        }
+        if (lightingManager != null) {
+            lightingManager.dispose();
         }
     }
 
