@@ -235,7 +235,7 @@ public class FirstPersonMazeScreen extends ScalableGameScreen {
 
         // Show Sahur distance for debugging
         final float distance = playerPosition.dst(sahurPosition);
-        GameApp.drawText("ui", "Sahur distance: " + (int)distance, 20, getWorldHeight() - 80, "red");
+        GameApp.drawText("ui", "Sahur distance: " + (int)distance, 20, getWorldHeight() - 80, "red-500");
 
         GameApp.drawText("ui", "ESC to exit", 20, 30, "amber-500");
         GameApp.endSpriteRendering();
