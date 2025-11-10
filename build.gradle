@@ -1,6 +1,10 @@
 plugins {
     id 'java'
     id 'application'
+    id 'checkstyle'
+    id 'pmd'
+    id 'com.github.spotbugs' version '6.0.26'
+    id 'com.github.ben-manes.versions' version '0.51.0'
 }
 
 group = 'nl.saxion.game.mazesahur'
@@ -77,4 +81,51 @@ pause
 // Make dist automatically generate the launch scripts
 tasks.named('dist') {
     dependsOn tasks.named('generateLaunchScripts')
+}
+
+// -------------------------
+// Code Quality Configuration
+// -------------------------
+
+// Checkstyle configuration
+checkstyle {
+    toolVersion = '10.20.1'
+    configFile = file("${rootDir}/config/checkstyle/checkstyle.xml")
+    ignoreFailures = false
+    maxWarnings = 0
+}
+
+// PMD configuration
+pmd {
+    toolVersion = '7.7.0'
+    ruleSets = []
+    ruleSetFiles = files("${rootDir}/config/pmd/ruleset.xml")
+    ignoreFailures = false
+    consoleOutput = true
+}
+
+// SpotBugs configuration
+spotbugs {
+    toolVersion = '4.8.6'
+    ignoreFailures = false
+}
+
+tasks.withType(com.github.spotbugs.snom.SpotBugsTask) {
+    reports {
+        html {
+            required = true
+            outputLocation = file("${buildDir}/reports/spotbugs/${name}.html")
+        }
+        xml {
+            required = false
+        }
+    }
+}
+
+// Dependency updates configuration
+tasks.named("dependencyUpdates").configure {
+    checkForGradleUpdate = true
+    outputFormatter = "json"
+    outputDir = "build/dependencyUpdates"
+    reportfileName = "report"
 }
