@@ -98,6 +98,52 @@ public final class PathFinder {
     }
 
     /**
+     * Checks if there's a clear line of sight between two points using DDA ray casting.
+     *
+     * @param maze The maze to check
+     * @param x1 Start X world position
+     * @param z1 Start Z world position
+     * @param x2 End X world position
+     * @param z2 End Z world position
+     * @param wallSize Size of each wall grid cell
+     * @return True if there's clear line of sight, false if blocked by walls
+     */
+    public static boolean hasLineOfSight(final MazeGenerator maze, final float x1, final float z1,
+                                         final float x2, final float z2, final float wallSize) {
+        // Calculate direction
+        final float dx = x2 - x1;
+        final float dz = z2 - z1;
+        final float distance = (float) Math.sqrt(dx * dx + dz * dz);
+
+        if (distance < 0.1f) {
+            return true; // Same position
+        }
+
+        // Normalize direction
+        final float dirX = dx / distance;
+        final float dirZ = dz / distance;
+
+        // Ray march through the maze
+        final int steps = (int) (distance / (wallSize * 0.5f)); // Check every half cell
+        for (int i = 0; i <= steps; i++) {
+            final float t = (distance / steps) * i;
+            final float checkX = x1 + dirX * t;
+            final float checkZ = z1 + dirZ * t;
+
+            // Convert to grid coordinates
+            final int gridX = (int) (checkX / wallSize);
+            final int gridZ = (int) (checkZ / wallSize);
+
+            // Check if this position is a wall
+            if (maze.isWall(gridX, gridZ)) {
+                return false;
+            }
+        }
+
+        return true;
+    }
+
+    /**
      * Calculates Manhattan distance heuristic.
      *
      * @param x1 Start X

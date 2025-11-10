@@ -13,7 +13,9 @@ import com.badlogic.gdx.graphics.g3d.ModelBatch;
 import com.badlogic.gdx.graphics.g3d.ModelInstance;
 import com.badlogic.gdx.graphics.g3d.attributes.ColorAttribute;
 import com.badlogic.gdx.graphics.g3d.attributes.TextureAttribute;
+import com.badlogic.gdx.graphics.g3d.attributes.FloatAttribute;
 import com.badlogic.gdx.graphics.g3d.environment.DirectionalLight;
+import com.badlogic.gdx.graphics.g3d.environment.PointLight;
 import com.badlogic.gdx.graphics.g3d.loader.ObjLoader;
 import com.badlogic.gdx.graphics.g3d.utils.ModelBuilder;
 import com.badlogic.gdx.math.Vector3;
@@ -22,6 +24,7 @@ import nl.saxion.gameapp.screens.ScalableGameScreen;
 
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Random;
 
 /**
  * First-person 3D maze game screen.
@@ -34,6 +37,7 @@ public class FirstPersonMazeScreen extends ScalableGameScreen {
     private static final float WALL_HEIGHT = 8f;
     private static final float WALL_SIZE = 8f; // HUGE walls = very wide corridors
     private static final float COLLISION_RADIUS = 2.5f;
+    private static final float SAHUR_COLLISION_RADIUS = 3.5f; // Wider than player for smooth corner navigation
 
     private PerspectiveCamera camera;
     private ModelBatch modelBatch;
@@ -46,16 +50,44 @@ public class FirstPersonMazeScreen extends ScalableGameScreen {
     private Model sahurModel;
     private ModelInstance sahurInstance;
     private com.badlogic.gdx.graphics.Texture sahurTexture;
+    private com.badlogic.gdx.graphics.Texture floorTexture;
+    private com.badlogic.gdx.graphics.Texture wallTexture;
+    private com.badlogic.gdx.graphics.Texture wallNormalMap;
+    private com.badlogic.gdx.graphics.Texture floorNormalMap;
+    private PointLight playerLight; // Dynamic light that follows the player
 
     private final Vector3 playerPosition;
     private final Vector3 sahurPosition;
+    private float sahurYaw; // Direction Sahur is facing
     private List<int[]> sahurPath;
     private int sahurPathIndex;
     private float sahurPathTimer;
     private static final float SAHUR_SPEED = 4f;
-    private static final float SAHUR_SCALE = 0.003f; // Bigger so you can see him
-    private static final float PATH_UPDATE_INTERVAL = 1f;
+    private static final float SAHUR_SCALE = 0.005f; // Bigger so you can see him better
+    private static final float SAHUR_HEIGHT = 0.5f; // Height above ground
+    private static final float PATH_UPDATE_INTERVAL = 3f; // Only pathfind every 3 seconds
+    private static final float WANDER_UPDATE_INTERVAL = 2f; // Change wander direction every 2 seconds
+    private static final float CHASE_MEMORY_DURATION = 10f; // Remember player position for 10 seconds
     private float pathUpdateTimer;
+    private float wanderUpdateTimer;
+    private float timeSincePlayerSeen; // How long since we last saw the player
+    private Vector3 lastKnownPlayerPosition; // Where we last saw the player
+    private Vector3 wanderTarget;
+    private final Random random;
+
+    // Movement smoothing to avoid getting stuck
+    private Vector3 lastPosition;
+    private float stuckTimer;
+    private static final float STUCK_THRESHOLD = 0.5f; // If haven't moved much in 0.5 seconds, we're stuck
+
+    // AI State
+    private enum AIState {
+        WANDERING,   // Moving randomly
+        CHASING,     // Direct line of sight to player
+        PURSUING,    // Going to last known position
+        PATHFINDING  // Using A* to navigate maze
+    }
+    private AIState aiState;
 
     private float yaw;
     private float pitch;
@@ -69,11 +101,20 @@ public class FirstPersonMazeScreen extends ScalableGameScreen {
     public FirstPersonMazeScreen() {
         super(1280, 720);
         playerPosition = new Vector3(12f, PLAYER_HEIGHT, 12f); // Start in open area
-        sahurPosition = new Vector3(100f, PLAYER_HEIGHT, 100f); // Start far away in open path
+        sahurPosition = new Vector3(0f, SAHUR_HEIGHT, 0f); // Will be set in show()
+        sahurYaw = 0;
         sahurPath = new ArrayList<>();
         sahurPathIndex = 0;
         sahurPathTimer = 0;
         pathUpdateTimer = 0;
+        wanderUpdateTimer = 0;
+        timeSincePlayerSeen = CHASE_MEMORY_DURATION + 1; // Start with no memory
+        lastKnownPlayerPosition = new Vector3();
+        wanderTarget = new Vector3();
+        lastPosition = new Vector3();
+        stuckTimer = 0;
+        random = new Random();
+        aiState = AIState.WANDERING;
         yaw = 0;
         pitch = 0;
         firstMouse = true;
@@ -100,21 +141,113 @@ public class FirstPersonMazeScreen extends ScalableGameScreen {
         // Setup rendering
         modelBatch = new ModelBatch();
 
-        // Setup lighting
+        // Setup enhanced lighting for better shading
         environment = new Environment();
-        environment.set(new ColorAttribute(ColorAttribute.AmbientLight, 0.6f, 0.6f, 0.6f, 1f));
-        environment.add(new DirectionalLight().set(0.8f, 0.8f, 0.8f, -0.5f, -1f, -0.5f));
+
+        // Lower ambient light for more dramatic lighting effects
+        environment.set(new ColorAttribute(ColorAttribute.AmbientLight, 0.2f, 0.2f, 0.25f, 1f));
+
+        // Main directional light from above-front (stronger for visible shading)
+        environment.add(new DirectionalLight().set(1.2f, 1.2f, 1.0f, -0.2f, -0.8f, -0.5f));
+
+        // Secondary directional light for backfill
+        environment.add(new DirectionalLight().set(0.4f, 0.4f, 0.5f, 0.3f, -0.5f, 0.8f));
+
+        // Create dynamic point light that follows player (warm light)
+        playerLight = new PointLight();
+        playerLight.set(1.5f, 1.3f, 1.0f, // Warm orange-yellow color
+                        playerPosition.x, playerPosition.y, playerPosition.z,
+                        30f); // Intensity/radius
+        environment.add(playerLight);
 
         // Generate LARGE maze with wide corridors
         final int mazeSize = 25; // Much larger maze = longer to solve
         maze = new MazeGenerator(mazeSize, mazeSize, System.currentTimeMillis());
         maze.generate();
 
+        // Find valid spawn position for Sahur (far from player)
+        findValidSahurSpawn();
+
         // Build 3D models
         buildMazeModels();
 
         // Load Sahur model
         loadSahurModel();
+
+        // Initialize first wander target
+        updateWanderTarget();
+    }
+
+    /**
+     * Finds a valid spawn position for Sahur that's far from the player.
+     */
+    private void findValidSahurSpawn() {
+        final int playerGridX = (int) (playerPosition.x / WALL_SIZE);
+        final int playerGridZ = (int) (playerPosition.z / WALL_SIZE);
+
+        int bestX = -1;
+        int bestZ = -1;
+        float maxDistance = 0;
+
+        // Search for the furthest valid position from player
+        for (int z = 0; z < maze.getHeight(); z++) {
+            for (int x = 0; x < maze.getWidth(); x++) {
+                // Skip walls
+                if (maze.isWall(x, z)) {
+                    continue;
+                }
+
+                // Check that this position is surrounded by valid space (not stuck in corner)
+                int validNeighbors = 0;
+                final int[][] directions = {{0, -1}, {0, 1}, {-1, 0}, {1, 0}};
+                for (final int[] dir : directions) {
+                    final int nx = x + dir[0];
+                    final int nz = z + dir[1];
+                    if (nx >= 0 && nx < maze.getWidth() && nz >= 0 && nz < maze.getHeight()
+                        && !maze.isWall(nx, nz)) {
+                        validNeighbors++;
+                    }
+                }
+
+                // Need at least 2 valid neighbors to ensure it's not a dead end
+                if (validNeighbors < 2) {
+                    continue;
+                }
+
+                // Calculate distance from player
+                final float dx = x - playerGridX;
+                final float dz = z - playerGridZ;
+                final float distance = (float) Math.sqrt(dx * dx + dz * dz);
+
+                // Keep track of furthest valid position
+                if (distance > maxDistance) {
+                    maxDistance = distance;
+                    bestX = x;
+                    bestZ = z;
+                }
+            }
+        }
+
+        // If we found a valid position, use it
+        if (bestX >= 0 && bestZ >= 0) {
+            sahurPosition.set(
+                bestX * WALL_SIZE + WALL_SIZE / 2f,
+                SAHUR_HEIGHT,
+                bestZ * WALL_SIZE + WALL_SIZE / 2f
+            );
+            lastPosition.set(sahurPosition);
+            System.out.println("Sahur spawned at grid (" + bestX + ", " + bestZ + ") - "
+                + (int)maxDistance + " cells from player");
+        } else {
+            // Fallback to a safer default
+            sahurPosition.set(
+                maze.getWidth() * WALL_SIZE / 2f,
+                SAHUR_HEIGHT,
+                maze.getHeight() * WALL_SIZE / 2f
+            );
+            lastPosition.set(sahurPosition);
+            System.out.println("Sahur spawned at maze center (fallback)");
+        }
     }
 
     /**
@@ -123,16 +256,82 @@ public class FirstPersonMazeScreen extends ScalableGameScreen {
     private void buildMazeModels() {
         final ModelBuilder modelBuilder = new ModelBuilder();
 
-        // Create wall model (bigger cube - 2x2 instead of 1x1)
-        final Material wallMaterial = new Material(ColorAttribute.createDiffuse(Color.DARK_GRAY));
-        wallModel = modelBuilder.createBox(WALL_SIZE, WALL_HEIGHT, WALL_SIZE, wallMaterial,
-                VertexAttributes.Usage.Position | VertexAttributes.Usage.Normal);
+        // Load wall textures (diffuse + normal map)
+        wallTexture = new com.badlogic.gdx.graphics.Texture(
+            Gdx.files.internal("textures/wall/mossy_brick_diff_4k.jpg"),
+            true // Enable mipmaps for better quality at distance
+        );
+        wallTexture.setFilter(
+            com.badlogic.gdx.graphics.Texture.TextureFilter.MipMapLinearLinear,
+            com.badlogic.gdx.graphics.Texture.TextureFilter.Linear
+        );
+        wallTexture.setWrap(
+            com.badlogic.gdx.graphics.Texture.TextureWrap.Repeat,
+            com.badlogic.gdx.graphics.Texture.TextureWrap.Repeat
+        );
 
-        // Create floor model (flat square - scaled up)
-        final Material floorMaterial = new Material(ColorAttribute.createDiffuse(Color.LIGHT_GRAY));
+        wallNormalMap = new com.badlogic.gdx.graphics.Texture(
+            Gdx.files.internal("textures/wall/mossy_brick_nor_gl_4k.jpg"),
+            true
+        );
+        wallNormalMap.setFilter(
+            com.badlogic.gdx.graphics.Texture.TextureFilter.MipMapLinearLinear,
+            com.badlogic.gdx.graphics.Texture.TextureFilter.Linear
+        );
+        wallNormalMap.setWrap(
+            com.badlogic.gdx.graphics.Texture.TextureWrap.Repeat,
+            com.badlogic.gdx.graphics.Texture.TextureWrap.Repeat
+        );
+
+        // Create wall model with texture and normal map
+        final Material wallMaterial = new Material(
+            TextureAttribute.createDiffuse(wallTexture),
+            TextureAttribute.createNormal(wallNormalMap),
+            ColorAttribute.createDiffuse(Color.WHITE),
+            ColorAttribute.createSpecular(0.3f, 0.3f, 0.3f, 1f), // Specular highlights
+            FloatAttribute.createShininess(8f) // Shininess for specular
+        );
+        wallModel = modelBuilder.createBox(WALL_SIZE, WALL_HEIGHT, WALL_SIZE, wallMaterial,
+                VertexAttributes.Usage.Position | VertexAttributes.Usage.Normal | VertexAttributes.Usage.TextureCoordinates);
+
+        // Load floor textures (diffuse + normal map)
+        floorTexture = new com.badlogic.gdx.graphics.Texture(
+            Gdx.files.internal("textures/floor/concrete_floor_damaged_01_diff_4k.jpg"),
+            true // Enable mipmaps for better quality at distance
+        );
+        floorTexture.setFilter(
+            com.badlogic.gdx.graphics.Texture.TextureFilter.MipMapLinearLinear,
+            com.badlogic.gdx.graphics.Texture.TextureFilter.Linear
+        );
+        floorTexture.setWrap(
+            com.badlogic.gdx.graphics.Texture.TextureWrap.Repeat,
+            com.badlogic.gdx.graphics.Texture.TextureWrap.Repeat
+        );
+
+        floorNormalMap = new com.badlogic.gdx.graphics.Texture(
+            Gdx.files.internal("textures/floor/concrete_floor_damaged_01_nor_gl_4k.jpg"),
+            true
+        );
+        floorNormalMap.setFilter(
+            com.badlogic.gdx.graphics.Texture.TextureFilter.MipMapLinearLinear,
+            com.badlogic.gdx.graphics.Texture.TextureFilter.Linear
+        );
+        floorNormalMap.setWrap(
+            com.badlogic.gdx.graphics.Texture.TextureWrap.Repeat,
+            com.badlogic.gdx.graphics.Texture.TextureWrap.Repeat
+        );
+
+        // Create floor model with texture and normal map (flat square - scaled up)
+        final Material floorMaterial = new Material(
+            TextureAttribute.createDiffuse(floorTexture),
+            TextureAttribute.createNormal(floorNormalMap),
+            ColorAttribute.createDiffuse(Color.WHITE),
+            ColorAttribute.createSpecular(0.2f, 0.2f, 0.2f, 1f), // Subtle specular
+            FloatAttribute.createShininess(4f) // Lower shininess for concrete
+        );
         final float floorSize = maze.getWidth() * WALL_SIZE;
         floorModel = modelBuilder.createBox(floorSize, 0.1f, floorSize, floorMaterial,
-                VertexAttributes.Usage.Position | VertexAttributes.Usage.Normal);
+                VertexAttributes.Usage.Position | VertexAttributes.Usage.Normal | VertexAttributes.Usage.TextureCoordinates);
 
         // Create floor instance
         floorInstance = new ModelInstance(floorModel);
@@ -141,6 +340,17 @@ public class FirstPersonMazeScreen extends ScalableGameScreen {
                 -0.05f,
                 floorSize / 2f
         );
+
+        // Scale texture coordinates to repeat the texture across the floor
+        // The texture will repeat based on the floor size to avoid stretching
+        final float textureScale = floorSize / (WALL_SIZE * 2f); // Repeat every 2 wall units
+        for (final com.badlogic.gdx.graphics.g3d.Material mat : floorInstance.materials) {
+            final TextureAttribute texAttr = (TextureAttribute) mat.get(TextureAttribute.Diffuse);
+            if (texAttr != null) {
+                texAttr.scaleU = textureScale;
+                texAttr.scaleV = textureScale;
+            }
+        }
 
         // Create wall instances (scaled to 2x2 grid)
         wallInstances = new ArrayList<>();
@@ -199,8 +409,10 @@ public class FirstPersonMazeScreen extends ScalableGameScreen {
      * Updates Sahur's transform (position, scale, rotation).
      */
     private void updateSahurTransform() {
-        sahurInstance.transform.setToScaling(SAHUR_SCALE, SAHUR_SCALE, SAHUR_SCALE);
-        sahurInstance.transform.setTranslation(sahurPosition);
+        sahurInstance.transform.idt(); // Reset transform
+        sahurInstance.transform.translate(sahurPosition);
+        sahurInstance.transform.rotate(Vector3.Y, sahurYaw); // Rotate to face direction
+        sahurInstance.transform.scale(SAHUR_SCALE, SAHUR_SCALE, SAHUR_SCALE);
     }
 
     @Override
@@ -208,6 +420,9 @@ public class FirstPersonMazeScreen extends ScalableGameScreen {
         handleInput(delta);
         updateSahurAI(delta);
         updateCamera();
+
+        // Update dynamic point light to follow player
+        playerLight.position.set(playerPosition);
 
         // Clear screen
         Gdx.gl.glClearColor(0.1f, 0.1f, 0.15f, 1f);
@@ -233,9 +448,15 @@ public class FirstPersonMazeScreen extends ScalableGameScreen {
         GameApp.drawText("ui", "MazeSahur - First Person", 20, getWorldHeight() - 20, "white");
         GameApp.drawText("ui", "WASD to move, Mouse to look", 20, getWorldHeight() - 50, "white");
 
-        // Show Sahur distance for debugging
+        // Show Sahur debug info
         final float distance = playerPosition.dst(sahurPosition);
         GameApp.drawText("ui", "Sahur distance: " + (int)distance, 20, getWorldHeight() - 80, "red-500");
+        GameApp.drawText("ui", "AI State: " + aiState, 20, getWorldHeight() - 110, "amber-500");
+
+        if (aiState == AIState.PURSUING) {
+            final int timeRemaining = (int) (CHASE_MEMORY_DURATION - timeSincePlayerSeen);
+            GameApp.drawText("ui", "Pursuit time: " + timeRemaining + "s", 20, getWorldHeight() - 140, "red-500");
+        }
 
         GameApp.drawText("ui", "ESC to exit", 20, 30, "amber-500");
         GameApp.endSpriteRendering();
@@ -327,49 +548,269 @@ public class FirstPersonMazeScreen extends ScalableGameScreen {
     }
 
     /**
-     * Updates Sahur's AI to chase the player using pathfinding.
+     * Updates Sahur's AI with intelligent behavior:
+     * - Chases directly when player is visible
+     * - Pursues last known position for 10 seconds after losing sight
+     * - Wanders randomly when player not visible
+     * - Uses pathfinding occasionally to get closer
+     * - Avoids getting stuck on corners
      *
      * @param delta Time since last frame
      */
     private void updateSahurAI(final float delta) {
-        // Update path periodically
-        pathUpdateTimer += delta;
-        if (pathUpdateTimer >= PATH_UPDATE_INTERVAL) {
-            pathUpdateTimer = 0;
+        // Check line of sight to player
+        final boolean canSeePlayer = PathFinder.hasLineOfSight(
+            maze, sahurPosition.x, sahurPosition.z,
+            playerPosition.x, playerPosition.z, WALL_SIZE
+        );
 
-            // Calculate grid positions
-            final int sahurGridX = (int) (sahurPosition.x / WALL_SIZE);
-            final int sahurGridY = (int) (sahurPosition.z / WALL_SIZE);
-            final int playerGridX = (int) (playerPosition.x / WALL_SIZE);
-            final int playerGridY = (int) (playerPosition.z / WALL_SIZE);
+        // Update memory timer and last known position
+        if (canSeePlayer) {
+            timeSincePlayerSeen = 0;
+            lastKnownPlayerPosition.set(playerPosition);
+            aiState = AIState.CHASING;
+        } else {
+            timeSincePlayerSeen += delta;
 
-            // Find new path
-            sahurPath = PathFinder.findPath(maze, sahurGridX, sahurGridY, playerGridX, playerGridY);
-            sahurPathIndex = 0;
+            // Transition from CHASING to PURSUING when we lose sight
+            if (aiState == AIState.CHASING) {
+                aiState = AIState.PURSUING;
+            }
+
+            // After 10 seconds of not seeing player, give up pursuit
+            if (timeSincePlayerSeen > CHASE_MEMORY_DURATION && aiState == AIState.PURSUING) {
+                aiState = AIState.WANDERING;
+                wanderUpdateTimer = 0;
+            }
         }
 
-        // Follow path
-        if (sahurPath != null && !sahurPath.isEmpty() && sahurPathIndex < sahurPath.size()) {
-            final int[] targetGrid = sahurPath.get(sahurPathIndex);
-            final float targetX = targetGrid[0] * WALL_SIZE + WALL_SIZE / 2f;
-            final float targetZ = targetGrid[1] * WALL_SIZE + WALL_SIZE / 2f;
+        Vector3 targetDirection = null;
 
-            // Move towards target
-            final Vector3 direction = new Vector3(targetX - sahurPosition.x, 0, targetZ - sahurPosition.z);
-            final float distance = direction.len();
+        // Behavior based on current state
+        switch (aiState) {
+            case CHASING:
+                // Move directly towards player (we can see them)
+                targetDirection = new Vector3(
+                    playerPosition.x - sahurPosition.x,
+                    0,
+                    playerPosition.z - sahurPosition.z
+                );
+                break;
 
-            if (distance < 1f) {
-                // Reached waypoint, move to next
-                sahurPathIndex++;
-            } else {
-                // Move towards waypoint
-                direction.nor().scl(SAHUR_SPEED * delta);
-                sahurPosition.add(direction);
+            case PURSUING:
+                // Move towards last known player position
+                targetDirection = new Vector3(
+                    lastKnownPlayerPosition.x - sahurPosition.x,
+                    0,
+                    lastKnownPlayerPosition.z - sahurPosition.z
+                );
+
+                // If we reached last known position, start pathfinding
+                if (targetDirection.len() < 2f) {
+                    aiState = AIState.PATHFINDING;
+                    updatePathToPlayer();
+                }
+                break;
+
+            case WANDERING:
+                // Update wander target periodically
+                wanderUpdateTimer += delta;
+                if (wanderUpdateTimer >= WANDER_UPDATE_INTERVAL) {
+                    wanderUpdateTimer = 0;
+                    updateWanderTarget();
+                }
+
+                // Move towards wander target
+                if (wanderTarget != null) {
+                    targetDirection = new Vector3(
+                        wanderTarget.x - sahurPosition.x,
+                        0,
+                        wanderTarget.z - sahurPosition.z
+                    );
+
+                    // If reached wander target, pick new one
+                    if (targetDirection.len() < 1f) {
+                        updateWanderTarget();
+                    }
+                }
+
+                // Occasionally use pathfinding to get closer to player
+                pathUpdateTimer += delta;
+                if (pathUpdateTimer >= PATH_UPDATE_INTERVAL) {
+                    pathUpdateTimer = 0;
+                    aiState = AIState.PATHFINDING;
+                    updatePathToPlayer();
+                }
+                break;
+
+            case PATHFINDING:
+                // Follow A* path
+                if (sahurPath != null && !sahurPath.isEmpty() && sahurPathIndex < sahurPath.size()) {
+                    final int[] targetGrid = sahurPath.get(sahurPathIndex);
+                    final float targetX = targetGrid[0] * WALL_SIZE + WALL_SIZE / 2f;
+                    final float targetZ = targetGrid[1] * WALL_SIZE + WALL_SIZE / 2f;
+
+                    targetDirection = new Vector3(targetX - sahurPosition.x, 0, targetZ - sahurPosition.z);
+
+                    if (targetDirection.len() < 1f) {
+                        sahurPathIndex++;
+                        if (sahurPathIndex >= sahurPath.size()) {
+                            // Finished path, check if we should still pursue
+                            if (timeSincePlayerSeen < CHASE_MEMORY_DURATION) {
+                                aiState = AIState.PURSUING;
+                            } else {
+                                aiState = AIState.WANDERING;
+                            }
+                        }
+                    }
+                } else {
+                    // No valid path, check if we should still pursue
+                    if (timeSincePlayerSeen < CHASE_MEMORY_DURATION) {
+                        aiState = AIState.PURSUING;
+                    } else {
+                        aiState = AIState.WANDERING;
+                    }
+                }
+                break;
+        }
+
+        // Stuck detection - check if we haven't moved much
+        stuckTimer += delta;
+        if (stuckTimer > STUCK_THRESHOLD) {
+            final float distanceMoved = sahurPosition.dst(lastPosition);
+            if (distanceMoved < 0.5f) {
+                // We're stuck! Try a different approach
+                handleStuck();
             }
+            lastPosition.set(sahurPosition);
+            stuckTimer = 0;
+        }
+
+        // Apply movement if we have a target direction
+        if (targetDirection != null && targetDirection.len() > 0.1f) {
+            // Calculate rotation to face movement direction
+            sahurYaw = (float) Math.toDegrees(Math.atan2(targetDirection.x, targetDirection.z));
+
+            // Move towards target with circular collision detection
+            targetDirection.nor().scl(SAHUR_SPEED * delta);
+            final Vector3 newPosition = sahurPosition.cpy().add(targetDirection);
+
+            // Use circular collision detection for smooth corner navigation
+            if (!checkSahurCollision(newPosition)) {
+                // No collision, move freely
+                sahurPosition.set(newPosition);
+            } else {
+                // Try sliding along walls (X direction)
+                final Vector3 slideX = sahurPosition.cpy().add(targetDirection.x, 0, 0);
+                if (!checkSahurCollision(slideX)) {
+                    sahurPosition.set(slideX);
+                } else {
+                    // Try sliding along walls (Z direction)
+                    final Vector3 slideZ = sahurPosition.cpy().add(0, 0, targetDirection.z);
+                    if (!checkSahurCollision(slideZ)) {
+                        sahurPosition.set(slideZ);
+                    }
+                    // If both fail, Sahur is stuck in a corner and doesn't move
+                }
+            }
+        }
+
+        // Safety check: ensure Sahur hasn't clipped into a wall somehow
+        if (checkSahurCollision(sahurPosition)) {
+            // Sahur somehow ended up colliding with a wall, revert to last known good position
+            sahurPosition.set(lastPosition);
+            System.out.println("Warning: Sahur clipped into wall, reverting to last position");
         }
 
         // Update Sahur's transform
         updateSahurTransform();
+    }
+
+    /**
+     * Handles when Sahur gets stuck on geometry.
+     */
+    private void handleStuck() {
+        // Force a new wander target or path
+        if (aiState == AIState.WANDERING || aiState == AIState.PURSUING) {
+            updateWanderTarget();
+        } else if (aiState == AIState.PATHFINDING) {
+            // Skip to next waypoint or abandon path
+            sahurPathIndex++;
+            if (sahurPathIndex >= sahurPath.size()) {
+                aiState = AIState.WANDERING;
+                updateWanderTarget();
+            }
+        }
+    }
+
+    /**
+     * Updates the wander target to a random valid adjacent cell.
+     */
+    private void updateWanderTarget() {
+        final int currentGridX = (int) (sahurPosition.x / WALL_SIZE);
+        final int currentGridZ = (int) (sahurPosition.z / WALL_SIZE);
+
+        // Validate current position is within bounds
+        if (currentGridX < 0 || currentGridX >= maze.getWidth()
+            || currentGridZ < 0 || currentGridZ >= maze.getHeight()) {
+            // If out of bounds, move to center of maze
+            wanderTarget.set(
+                maze.getWidth() * WALL_SIZE / 2f,
+                SAHUR_HEIGHT,
+                maze.getHeight() * WALL_SIZE / 2f
+            );
+            return;
+        }
+
+        // Try to find a valid adjacent cell (including diagonals for more movement options)
+        final int[][] directions = {{0, -1}, {0, 1}, {-1, 0}, {1, 0},
+                                     {1, 1}, {-1, -1}, {1, -1}, {-1, 1}};
+        final List<int[]> validDirections = new ArrayList<>();
+
+        for (final int[] dir : directions) {
+            final int targetX = currentGridX + dir[0];
+            final int targetZ = currentGridZ + dir[1];
+
+            // Check bounds and wall status
+            if (targetX >= 0 && targetX < maze.getWidth()
+                && targetZ >= 0 && targetZ < maze.getHeight()
+                && !maze.isWall(targetX, targetZ)) {
+                validDirections.add(new int[]{targetX, targetZ});
+            }
+        }
+
+        // Pick a random valid direction
+        if (!validDirections.isEmpty()) {
+            final int[] chosen = validDirections.get(random.nextInt(validDirections.size()));
+            wanderTarget.set(
+                chosen[0] * WALL_SIZE + WALL_SIZE / 2f,
+                SAHUR_HEIGHT,
+                chosen[1] * WALL_SIZE + WALL_SIZE / 2f
+            );
+        } else {
+            // No valid neighbors, stay at current position (shouldn't happen often)
+            wanderTarget.set(sahurPosition);
+            System.out.println("Warning: Sahur has no valid wander targets at ("
+                + currentGridX + ", " + currentGridZ + ")");
+        }
+    }
+
+    /**
+     * Updates the A* path to the player's position.
+     */
+    private void updatePathToPlayer() {
+        final int sahurGridX = (int) (sahurPosition.x / WALL_SIZE);
+        final int sahurGridZ = (int) (sahurPosition.z / WALL_SIZE);
+        final int playerGridX = (int) (playerPosition.x / WALL_SIZE);
+        final int playerGridZ = (int) (playerPosition.z / WALL_SIZE);
+
+        // Only pathfind if not at same position
+        if (sahurGridX != playerGridX || sahurGridZ != playerGridZ) {
+            sahurPath = PathFinder.findPath(maze, sahurGridX, sahurGridZ, playerGridX, playerGridZ);
+            sahurPathIndex = 0;
+        } else {
+            aiState = AIState.WANDERING;
+        }
     }
 
     /**
@@ -466,6 +907,55 @@ public class FirstPersonMazeScreen extends ScalableGameScreen {
         return false;
     }
 
+    /**
+     * Checks if Sahur's position would collide with any walls using circular collision.
+     * Uses a wider radius than the player to ensure smooth navigation around corners.
+     *
+     * @param position Position to check
+     * @return True if collision detected
+     */
+    private boolean checkSahurCollision(final Vector3 position) {
+        // Check collision with circle vs AABB (accurate method)
+        final int gridX = (int) Math.floor(position.x / WALL_SIZE);
+        final int gridZ = (int) Math.floor(position.z / WALL_SIZE);
+
+        // Check 3x3 grid around Sahur's position (wider check due to larger radius)
+        for (int dz = -2; dz <= 2; dz++) {
+            for (int dx = -2; dx <= 2; dx++) {
+                final int checkX = gridX + dx;
+                final int checkZ = gridZ + dz;
+
+                // Check if this grid cell is a wall
+                if (checkX >= 0 && checkX < maze.getWidth()
+                    && checkZ >= 0 && checkZ < maze.getHeight()
+                    && maze.isWall(checkX, checkZ)) {
+
+                    // Wall bounds in world space
+                    final float wallMinX = checkX * WALL_SIZE;
+                    final float wallMaxX = wallMinX + WALL_SIZE;
+                    final float wallMinZ = checkZ * WALL_SIZE;
+                    final float wallMaxZ = wallMinZ + WALL_SIZE;
+
+                    // Find closest point on wall box to Sahur's circle center
+                    final float closestX = Math.max(wallMinX, Math.min(position.x, wallMaxX));
+                    final float closestZ = Math.max(wallMinZ, Math.min(position.z, wallMaxZ));
+
+                    // Calculate distance from Sahur to closest point
+                    final float dx2 = position.x - closestX;
+                    final float dz2 = position.z - closestZ;
+                    final float distSquared = dx2 * dx2 + dz2 * dz2;
+
+                    // Collision if distance is less than Sahur's collision radius
+                    if (distSquared < SAHUR_COLLISION_RADIUS * SAHUR_COLLISION_RADIUS) {
+                        return true;
+                    }
+                }
+            }
+        }
+
+        return false;
+    }
+
     @Override
     public void resize(final int width, final int height) {
         camera.viewportWidth = width;
@@ -483,8 +973,20 @@ public class FirstPersonMazeScreen extends ScalableGameScreen {
         if (wallModel != null) {
             wallModel.dispose();
         }
+        if (wallTexture != null) {
+            wallTexture.dispose();
+        }
+        if (wallNormalMap != null) {
+            wallNormalMap.dispose();
+        }
         if (floorModel != null) {
             floorModel.dispose();
+        }
+        if (floorTexture != null) {
+            floorTexture.dispose();
+        }
+        if (floorNormalMap != null) {
+            floorNormalMap.dispose();
         }
         if (sahurModel != null) {
             sahurModel.dispose();
