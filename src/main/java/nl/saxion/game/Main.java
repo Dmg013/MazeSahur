@@ -1,12 +1,11 @@
 package nl.saxion.game;
 
-import nl.saxion.game.mazesahur.MainScreen;
-import nl.saxion.game.mazesahur.ModelViewerScreen;
+import nl.saxion.game.mazesahur.FirstPersonMazeScreen;
 import nl.saxion.gameapp.GameApp;
 
 /**
  * Main entry point for the MazeSahur game.
- * Initializes the game screens and starts the game loop.
+ * A first-person 3D maze game with procedural generation.
  */
 public final class Main {
 
@@ -24,10 +23,9 @@ public final class Main {
      */
     public static void main(String[] args) {
         // Add screens
-        GameApp.addScreen("MainScreen", new MainScreen());
-        GameApp.addScreen("ModelViewerScreen", new ModelViewerScreen());
+        GameApp.addScreen("MazeGame", new FirstPersonMazeScreen());
 
-        // Start game loop with 3D model viewer
-        GameApp.start("MazeSahur - 3D Model Viewer", 1280, 720, 60, false, "ModelViewerScreen");
+        // Start game loop
+        GameApp.start("MazeSahur - First Person Maze", 1280, 720, 60, false, "MazeGame");
     }
 }
