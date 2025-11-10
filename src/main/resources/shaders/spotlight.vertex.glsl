@@ -7,6 +7,7 @@ uniform mat4 u_projViewTrans;
 uniform mat4 u_worldTrans;
 uniform mat3 u_normalMatrix;
 uniform vec3 u_cameraPosition;
+uniform float u_hasHeightMap;
 
 varying vec3 v_position;
 varying vec3 v_normal;
@@ -21,14 +22,17 @@ void main() {
     v_position = worldPos.xyz;
     v_normal = normalize(u_normalMatrix * a_normal);
 
-    // Simple approach: use original texture coordinates and apply rotation
-    // This works for both box geometry (walls/floor) and OBJ models (enemy)
+    // Use original texture coordinates
     vec2 uv = a_texCoord0;
 
-    // Rotate UVs 90 degrees clockwise
-    vec2 temp = uv;
-    uv.x = temp.y;
-    uv.y = 1.0 - temp.x;
+    // Only rotate UVs for walls/floor (surfaces with height maps)
+    // Enemy model has no height map, so keep original UVs
+    if (u_hasHeightMap > 0.5) {
+        // Rotate UVs 90 degrees clockwise for walls/floor
+        vec2 temp = uv;
+        uv.x = temp.y;
+        uv.y = 1.0 - temp.x;
+    }
 
     v_texCoord0 = uv;
 
