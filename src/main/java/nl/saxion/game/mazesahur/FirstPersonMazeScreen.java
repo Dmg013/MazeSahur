@@ -339,12 +339,12 @@ public class FirstPersonMazeScreen extends ScalableGameScreen {
 
             // Calculate grid positions
             final int sahurGridX = (int) (sahurPosition.x / WALL_SIZE);
-            final int sahurGridZ = (int) (sahurPosition.z / WALL_SIZE);
+            final int sahurGridY = (int) (sahurPosition.z / WALL_SIZE);
             final int playerGridX = (int) (playerPosition.x / WALL_SIZE);
-            final int playerGridZ = (int) (playerPosition.z / WALL_SIZE);
+            final int playerGridY = (int) (playerPosition.z / WALL_SIZE);
 
             // Find new path
-            sahurPath = PathFinder.findPath(maze, sahurGridX, sahurGridZ, playerGridX, playerGridZ);
+            sahurPath = PathFinder.findPath(maze, sahurGridX, sahurGridY, playerGridX, playerGridY);
             sahurPathIndex = 0;
         }
 
