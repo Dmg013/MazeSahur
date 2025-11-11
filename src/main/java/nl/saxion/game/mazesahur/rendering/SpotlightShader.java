@@ -46,7 +46,25 @@ public class SpotlightShader implements Shader {
     // Parallax occlusion mapping parameters
     private float heightScale = 0.06f;    // Depth scale for parallax effect (conservative but visible)
 
+    // Point lights for ceiling lamps
+    private int numPointLights = 0;
+    private final Vector3[] pointLightPositions = new Vector3[20];
+    private final Vector3[] pointLightColors = new Vector3[20];
+    private final float[] pointLightIntensities = new float[20];
+
+    // Maze data for shadow casting
+    private com.badlogic.gdx.graphics.Texture mazeTexture;
+    private float mazeWidth;
+    private float mazeHeight;
+    private float cellSize;
+
     public SpotlightShader() {
+        // Initialize point light arrays
+        for (int i = 0; i < 20; i++) {
+            pointLightPositions[i] = new Vector3();
+            pointLightColors[i] = new Vector3(1.0f, 0.9f, 0.7f); // Warm light color
+            pointLightIntensities[i] = 1.0f;
+        }
         final String vertexShader = Gdx.files.internal("shaders/spotlight.vertex.glsl").readString();
         final String fragmentShader = Gdx.files.internal("shaders/spotlight.fragment.glsl").readString();
 
@@ -108,6 +126,23 @@ public class SpotlightShader implements Shader {
         } else {
             // Disable spotlight by setting intensity to 0
             program.setUniformf("u_spotIntensity", 0f);
+        }
+
+        // Set point light parameters
+        program.setUniformi("u_numPointLights", numPointLights);
+        for (int i = 0; i < numPointLights; i++) {
+            program.setUniformf("u_pointLightPositions[" + i + "]", pointLightPositions[i]);
+            program.setUniformf("u_pointLightColors[" + i + "]", pointLightColors[i]);
+            program.setUniformf("u_pointLightIntensities[" + i + "]", pointLightIntensities[i]);
+        }
+
+        // Set maze data for shadow casting
+        if (mazeTexture != null) {
+            final int mazeTexUnit = context.textureBinder.bind(mazeTexture);
+            program.setUniformi("u_mazeTexture", mazeTexUnit);
+            program.setUniformf("u_mazeWidth", mazeWidth);
+            program.setUniformf("u_mazeHeight", mazeHeight);
+            program.setUniformf("u_cellSize", cellSize);
         }
 
         context.setDepthTest(GL20.GL_LEQUAL);
@@ -251,6 +286,40 @@ public class SpotlightShader implements Shader {
      */
     public float getHeightScale() {
         return heightScale;
+    }
+
+    /**
+     * Sets the point lights for ceiling lamps.
+     *
+     * @param positions Array of light positions
+     * @param colors Array of light colors
+     * @param intensities Array of light intensities
+     * @param count Number of lights to use
+     */
+    public void setPointLights(final Vector3[] positions, final Vector3[] colors,
+                                final float[] intensities, final int count) {
+        this.numPointLights = Math.min(count, 20); // Max 20 lights
+        for (int i = 0; i < numPointLights; i++) {
+            this.pointLightPositions[i].set(positions[i]);
+            this.pointLightColors[i].set(colors[i]);
+            this.pointLightIntensities[i] = intensities[i];
+        }
+    }
+
+    /**
+     * Sets the maze data for shadow casting.
+     *
+     * @param mazeTexture Texture where white = walls, black = paths
+     * @param width Maze width in cells
+     * @param height Maze height in cells
+     * @param cellSize Size of each cell in world units
+     */
+    public void setMazeData(final com.badlogic.gdx.graphics.Texture mazeTexture,
+                            final float width, final float height, final float cellSize) {
+        this.mazeTexture = mazeTexture;
+        this.mazeWidth = width;
+        this.mazeHeight = height;
+        this.cellSize = cellSize;
     }
 }
 

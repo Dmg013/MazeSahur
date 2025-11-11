@@ -21,6 +21,18 @@
     uniform vec3 u_moonDirection;     // Directional moonlight
     uniform vec3 u_moonColor;         // Moonlight color
 
+    // Point lights for ceiling lamps (max 20)
+    uniform int u_numPointLights;
+    uniform vec3 u_pointLightPositions[20];
+    uniform vec3 u_pointLightColors[20];
+    uniform float u_pointLightIntensities[20];
+
+    // Maze shadow casting
+    uniform sampler2D u_mazeTexture;
+    uniform float u_mazeWidth;
+    uniform float u_mazeHeight;
+    uniform float u_cellSize;
+
     // Fog parameters
     uniform vec3 u_fogColor;          // Fog color (dark)
     uniform float u_fogDensity;       // Fog density
@@ -33,6 +45,42 @@
     varying vec3 v_tangent;
     varying vec3 v_bitangent;
     varying vec3 v_viewDir;
+
+    // Shadow ray casting - checks if there's a wall between light and surface
+    bool isInShadow(vec3 surfacePos, vec3 lightPos) {
+        // Calculate ray from surface to light
+        vec3 rayDir = lightPos - surfacePos;
+        float rayLength = length(rayDir);
+        rayDir = normalize(rayDir);
+
+        // Ray march through the maze grid
+        float stepSize = u_cellSize * 0.25; // Quarter cell steps for accuracy
+        int maxSteps = int(rayLength / stepSize) + 1;
+
+        for (int step = 1; step < maxSteps; step++) {
+            vec3 samplePos = surfacePos + rayDir * (float(step) * stepSize);
+
+            // Convert world position to maze grid coordinates
+            float gridX = samplePos.x / u_cellSize;
+            float gridZ = samplePos.z / u_cellSize;
+
+            // Check bounds
+            if (gridX < 0.0 || gridX >= u_mazeWidth || gridZ < 0.0 || gridZ >= u_mazeHeight) {
+                continue;
+            }
+
+            // Sample maze texture (walls are white, paths are black)
+            vec2 mazeUV = vec2(gridX / u_mazeWidth, gridZ / u_mazeHeight);
+            float wallValue = texture2D(u_mazeTexture, mazeUV).r;
+
+            // If we hit a wall, we're in shadow
+            if (wallValue > 0.5) {
+                return true;
+            }
+        }
+
+        return false; // No wall blocking, not in shadow
+    }
 
     // Parallax Occlusion Mapping function - conservative version
     vec2 parallaxOcclusionMapping(vec2 texCoords, vec3 viewDir) {
@@ -98,8 +146,17 @@
         vec2 texCoords = v_texCoord0;
 
         // Transform view direction to tangent space
+        // Create TBN matrix for transforming to world space
         mat3 TBN = mat3(v_tangent, v_bitangent, v_normal);
-        vec3 tangentViewDir = normalize(transpose(TBN) * v_viewDir);
+
+        // Manually transpose TBN to transform from world space to tangent space
+        // (transpose function is not available in all GLSL versions)
+        mat3 TBN_transpose = mat3(
+            v_tangent.x, v_bitangent.x, v_normal.x,
+            v_tangent.y, v_bitangent.y, v_normal.y,
+            v_tangent.z, v_bitangent.z, v_normal.z
+        );
+        vec3 tangentViewDir = normalize(TBN_transpose * v_viewDir);
 
         // Only apply parallax if we have a height map
         if (u_hasHeightMap > 0.5) {
@@ -157,8 +214,31 @@
 
     vec3 spotlight = (diffuse + specular) * intensity * attenuation * u_spotIntensity;
 
+    // ===== POINT LIGHTS (Ceiling lamps) with shadows =====
+    vec3 pointLighting = vec3(0.0);
+    for (int i = 0; i < u_numPointLights; i++) {
+        vec3 lightDir = u_pointLightPositions[i] - v_position;
+        float distance = length(lightDir);
+        lightDir = normalize(lightDir);
+
+        // Shadow check - skip this light if blocked by a wall
+        if (isInShadow(v_position, u_pointLightPositions[i])) {
+            continue; // Light is blocked, skip this lamp
+        }
+
+        // Distance attenuation (quadratic falloff)
+        float attenuation = 1.0 / (1.0 + 0.08 * distance + 0.015 * distance * distance);
+
+        // Diffuse lighting
+        float diff = max(dot(normal, lightDir), 0.0);
+
+        // Add point light contribution
+        vec3 diffuse = u_pointLightColors[i] * diff * texColor.rgb * u_pointLightIntensities[i];
+        pointLighting += diffuse * attenuation;
+    }
+
     // Combine all lighting
-    vec3 litColor = ambient + moonlight + spotlight;
+    vec3 litColor = ambient + moonlight + spotlight + pointLighting;
 
     // ===== FOG CALCULATION (Distance-based exponential fog) =====
     float distanceToCamera = length(u_cameraPosition - v_position);

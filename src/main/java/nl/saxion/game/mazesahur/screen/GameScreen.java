@@ -113,6 +113,7 @@ public class GameScreen extends ScalableGameScreen {
         // Update lighting
         final boolean isMoving = player.isMoving();
         lightingManager.updateFlashlight(player.getPosition(), camera.direction, delta, isMoving);
+        mazeRenderer.updateLampFlicker(delta);
 
         // Clear screen
         Gdx.gl.glClearColor(0.0f, 0.0f, 0.0f, 1f);

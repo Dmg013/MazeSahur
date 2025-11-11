@@ -8,7 +8,6 @@ uniform mat4 u_worldTrans;
 uniform mat3 u_normalMatrix;
 uniform vec3 u_cameraPosition;
 uniform float u_hasHeightMap;
-
 varying vec3 v_position;
 varying vec3 v_normal;
 varying vec2 v_texCoord0;
