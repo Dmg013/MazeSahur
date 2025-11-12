@@ -6,8 +6,12 @@
     uniform sampler2D u_diffuseTexture;
     uniform sampler2D u_normalTexture;
     uniform sampler2D u_heightTexture;
+    uniform sampler2D u_roughnessTexture;
+    uniform sampler2D u_specularTexture;
     uniform float u_heightScale;
     uniform float u_hasHeightMap;
+    uniform float u_hasRoughnessMap;
+    uniform float u_hasSpecularMap;
 
     uniform vec3 u_ambientLight;
     uniform vec3 u_spotPosition;      // Flashlight position in world space
@@ -46,17 +50,24 @@
     varying vec3 v_bitangent;
     varying vec3 v_viewDir;
 
-    // Shadow ray casting - checks if there's a wall between light and surface
-    bool isInShadow(vec3 surfacePos, vec3 lightPos) {
+    // Optimized shadow ray casting - single ray check
+    bool castShadowRay(vec3 surfacePos, vec3 lightPos) {
         // Calculate ray from surface to light
         vec3 rayDir = lightPos - surfacePos;
         float rayLength = length(rayDir);
         rayDir = normalize(rayDir);
 
-        // Ray march through the maze grid
-        float stepSize = u_cellSize * 0.25; // Quarter cell steps for accuracy
+        // Use adaptive step size - larger steps for faster performance
+        float stepSize = u_cellSize * 0.4; // Larger steps (was 0.25)
         int maxSteps = int(rayLength / stepSize) + 1;
 
+        // Cap max steps for performance (lights far away don't need perfect shadows)
+        if (maxSteps > 30) {
+            maxSteps = 30;
+            stepSize = rayLength / 30.0;
+        }
+
+        // Start ray slightly offset to avoid self-shadowing
         for (int step = 1; step < maxSteps; step++) {
             vec3 samplePos = surfacePos + rayDir * (float(step) * stepSize);
 
@@ -64,7 +75,7 @@
             float gridX = samplePos.x / u_cellSize;
             float gridZ = samplePos.z / u_cellSize;
 
-            // Check bounds
+            // Check bounds - early exit if out of maze
             if (gridX < 0.0 || gridX >= u_mazeWidth || gridZ < 0.0 || gridZ >= u_mazeHeight) {
                 continue;
             }
@@ -80,6 +91,49 @@
         }
 
         return false; // No wall blocking, not in shadow
+    }
+
+    // Soft shadow calculation with optimized PCF (Percentage Closer Filtering)
+    // Returns 0.0 (fully shadowed) to 1.0 (fully lit)
+    float getSoftShadow(vec3 surfacePos, vec3 lightPos) {
+        // First do a quick center check - if fully lit, no need for more samples
+        bool centerShadow = castShadowRay(surfacePos, lightPos);
+
+        // If center is lit, do a quick edge check to see if we're near shadow boundary
+        if (!centerShadow) {
+            // Calculate perpendicular vectors for edge sampling
+            vec3 toLightDir = normalize(lightPos - surfacePos);
+            vec3 perpendicular1 = normalize(cross(toLightDir, vec3(0.0, 1.0, 0.0)));
+
+            if (length(perpendicular1) < 0.1) {
+                perpendicular1 = normalize(cross(toLightDir, vec3(1.0, 0.0, 0.0)));
+            }
+
+            vec3 perpendicular2 = normalize(cross(toLightDir, perpendicular1));
+            float kernelSize = u_cellSize * 0.2;
+
+            // Quick 4-sample check at edges
+            bool edge1 = castShadowRay(surfacePos, lightPos + perpendicular1 * kernelSize);
+            bool edge2 = castShadowRay(surfacePos, lightPos - perpendicular1 * kernelSize);
+            bool edge3 = castShadowRay(surfacePos, lightPos + perpendicular2 * kernelSize);
+            bool edge4 = castShadowRay(surfacePos, lightPos - perpendicular2 * kernelSize);
+
+            // If all edges match center, we're in uniform area - return early
+            if (!edge1 && !edge2 && !edge3 && !edge4) {
+                return 1.0; // Fully lit
+            }
+
+            // We're near an edge, return soft transition (5-sample average)
+            float shadowSum = 1.0; // Center is lit
+            shadowSum += edge1 ? 0.0 : 1.0;
+            shadowSum += edge2 ? 0.0 : 1.0;
+            shadowSum += edge3 ? 0.0 : 1.0;
+            shadowSum += edge4 ? 0.0 : 1.0;
+            return shadowSum / 5.0;
+        }
+
+        // Center is shadowed, return fully shadowed
+        return 0.0;
     }
 
     // Parallax Occlusion Mapping function - conservative version
@@ -177,6 +231,22 @@
             normal = normalize(TBN * normalMap);
         }
 
+        // Sample roughness map (grayscale - higher = rougher surface)
+        float roughness = 0.5; // Default medium roughness
+        if (u_hasRoughnessMap > 0.5) {
+            roughness = texture2D(u_roughnessTexture, texCoords).r;
+        }
+
+        // Sample specular map (grayscale - higher = more reflective)
+        float specularStrength = 0.3; // Default subtle specular
+        if (u_hasSpecularMap > 0.5) {
+            specularStrength = texture2D(u_specularTexture, texCoords).r;
+        }
+
+        // Convert roughness to shininess (rougher = lower shininess)
+        // Roughness 0.0 (smooth) = shininess 128, roughness 1.0 (rough) = shininess 4
+        float shininess = mix(128.0, 4.0, roughness);
+
     // Ambient lighting (very dark)
     vec3 ambient = u_ambientLight * texColor.rgb;
 
@@ -203,27 +273,30 @@
     // Diffuse lighting (Lambertian) using normal from normal map
     float diff = max(dot(normal, lightDir), 0.0);
 
-    // Specular lighting (Blinn-Phong for performance) using normal from normal map
+    // Specular lighting (Blinn-Phong) using material properties
     vec3 viewDir = normalize(u_cameraPosition - v_position);
     vec3 halfwayDir = normalize(lightDir + viewDir);
-    float spec = pow(max(dot(normal, halfwayDir), 0.0), 16.0);
+    float spec = pow(max(dot(normal, halfwayDir), 0.0), shininess);
 
     // Combine spotlight components
     vec3 diffuse = u_spotColor * diff * texColor.rgb;
-    vec3 specular = u_spotColor * spec * 0.3; // Subtle specular
+    vec3 specular = u_spotColor * spec * specularStrength;
 
     vec3 spotlight = (diffuse + specular) * intensity * attenuation * u_spotIntensity;
 
-    // ===== POINT LIGHTS (Ceiling lamps) with shadows =====
+    // ===== POINT LIGHTS (Ceiling lamps) with soft shadows =====
     vec3 pointLighting = vec3(0.0);
     for (int i = 0; i < u_numPointLights; i++) {
         vec3 lightDir = u_pointLightPositions[i] - v_position;
         float distance = length(lightDir);
         lightDir = normalize(lightDir);
 
-        // Shadow check - skip this light if blocked by a wall
-        if (isInShadow(v_position, u_pointLightPositions[i])) {
-            continue; // Light is blocked, skip this lamp
+        // Soft shadow calculation (0.0 = fully shadowed, 1.0 = fully lit)
+        float shadowFactor = getSoftShadow(v_position, u_pointLightPositions[i]);
+
+        // Skip if fully shadowed (optimization)
+        if (shadowFactor < 0.01) {
+            continue;
         }
 
         // Distance attenuation (quadratic falloff)
@@ -232,9 +305,14 @@
         // Diffuse lighting
         float diff = max(dot(normal, lightDir), 0.0);
 
-        // Add point light contribution
+        // Specular lighting with material properties
+        vec3 pointHalfwayDir = normalize(lightDir + viewDir);
+        float pointSpec = pow(max(dot(normal, pointHalfwayDir), 0.0), shininess);
+
+        // Add point light contribution with soft shadow
         vec3 diffuse = u_pointLightColors[i] * diff * texColor.rgb * u_pointLightIntensities[i];
-        pointLighting += diffuse * attenuation;
+        vec3 specular = u_pointLightColors[i] * pointSpec * specularStrength * u_pointLightIntensities[i];
+        pointLighting += (diffuse + specular) * attenuation * shadowFactor;
     }
 
     // Combine all lighting

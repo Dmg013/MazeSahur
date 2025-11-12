@@ -100,17 +100,29 @@ public class MaterialManager {
             material.set(new TextureAttribute(TextureAttribute.Bump, textureSet.getDisplacementMap()));
         }
 
-        // Apply specular properties (roughness affects this)
+        // Apply roughness map for per-pixel specular control
+        if (textureSet.getRoughnessMap() != null) {
+            material.set(new TextureAttribute(TextureAttribute.Roughness, textureSet.getRoughnessMap()));
+        }
+
+        // Apply specular map for per-pixel reflection control
+        if (textureSet.getSpecularMap() != null) {
+            material.set(new TextureAttribute(TextureAttribute.Specular, textureSet.getSpecularMap()));
+        }
+
+        // Apply specular properties (used as defaults if maps not available)
         material.set(ColorAttribute.createSpecular(surfaceType.getSpecularColor()));
         material.set(FloatAttribute.createShininess(surfaceType.getShininess()));
 
         // Apply ambient color (AO map enhances this)
         material.set(ColorAttribute.createAmbient(surfaceType.getAmbientColor()));
 
-        // Note: AO and roughness maps are loaded but require custom shader support
-        // - AO map: Can be used to multiply with ambient lighting in shader
-        // - Roughness map: Can control specular intensity per-pixel in shader
-        // - Displacement map: NOW IMPLEMENTED with parallax occlusion mapping!
+        // PBR textures fully integrated:
+        // - Diffuse map: Base color
+        // - Normal map: Surface detail
+        // - Displacement map: Parallax occlusion mapping for depth
+        // - Roughness map: Per-pixel specular control
+        // - Specular map: Per-pixel reflection intensity
 
         return material;
     }

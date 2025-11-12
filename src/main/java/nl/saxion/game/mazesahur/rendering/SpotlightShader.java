@@ -18,6 +18,10 @@ import com.badlogic.gdx.utils.GdxRuntimeException;
  * @version 1.0
  */
 public class SpotlightShader implements Shader {
+    // Custom texture attribute types for PBR textures
+    private static final long ROUGHNESS_TEXTURE = com.badlogic.gdx.graphics.g3d.Attribute.register("roughnessTexture");
+    private static final long SPECULAR_TEXTURE = com.badlogic.gdx.graphics.g3d.Attribute.register("specularTexture");
+
     private ShaderProgram program;
     private Camera camera;
     private RenderContext context;
@@ -182,6 +186,16 @@ public class SpotlightShader implements Shader {
             renderable.material.get(com.badlogic.gdx.graphics.g3d.attributes.TextureAttribute.class,
                 com.badlogic.gdx.graphics.g3d.attributes.TextureAttribute.Bump);
 
+        // Custom texture attribute types for roughness and specular
+        final long ROUGHNESS_TEXTURE = com.badlogic.gdx.graphics.g3d.Attribute.register("roughnessTexture");
+        final long SPECULAR_TEXTURE = com.badlogic.gdx.graphics.g3d.Attribute.register("specularTexture");
+
+        final com.badlogic.gdx.graphics.g3d.attributes.TextureAttribute roughnessAttr =
+            renderable.material.get(com.badlogic.gdx.graphics.g3d.attributes.TextureAttribute.class, ROUGHNESS_TEXTURE);
+
+        final com.badlogic.gdx.graphics.g3d.attributes.TextureAttribute specularAttr =
+            renderable.material.get(com.badlogic.gdx.graphics.g3d.attributes.TextureAttribute.class, SPECULAR_TEXTURE);
+
         // Bind diffuse texture
         if (diffuseAttr != null && diffuseAttr.textureDescription.texture != null) {
             final int unit = context.textureBinder.bind(diffuseAttr.textureDescription.texture);
@@ -209,6 +223,36 @@ public class SpotlightShader implements Shader {
             if (diffuseAttr != null && diffuseAttr.textureDescription.texture != null) {
                 final int unit = context.textureBinder.bind(diffuseAttr.textureDescription.texture);
                 program.setUniformi("u_heightTexture", unit);
+            }
+        }
+
+        // Bind roughness map and set flag
+        if (roughnessAttr != null && roughnessAttr.textureDescription.texture != null) {
+            final int unit = context.textureBinder.bind(roughnessAttr.textureDescription.texture);
+            program.setUniformi("u_roughnessTexture", unit);
+            program.setUniformf("u_hasRoughnessMap", 1.0f);
+        } else {
+            // Use default roughness
+            program.setUniformf("u_hasRoughnessMap", 0.0f);
+            // Still bind a texture to prevent shader errors (use diffuse)
+            if (diffuseAttr != null && diffuseAttr.textureDescription.texture != null) {
+                final int unit = context.textureBinder.bind(diffuseAttr.textureDescription.texture);
+                program.setUniformi("u_roughnessTexture", unit);
+            }
+        }
+
+        // Bind specular map and set flag
+        if (specularAttr != null && specularAttr.textureDescription.texture != null) {
+            final int unit = context.textureBinder.bind(specularAttr.textureDescription.texture);
+            program.setUniformi("u_specularTexture", unit);
+            program.setUniformf("u_hasSpecularMap", 1.0f);
+        } else {
+            // Use default specular strength
+            program.setUniformf("u_hasSpecularMap", 0.0f);
+            // Still bind a texture to prevent shader errors (use diffuse)
+            if (diffuseAttr != null && diffuseAttr.textureDescription.texture != null) {
+                final int unit = context.textureBinder.bind(diffuseAttr.textureDescription.texture);
+                program.setUniformi("u_specularTexture", unit);
             }
         }
 
