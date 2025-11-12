@@ -51,7 +51,7 @@ public class TextureSet {
     }
 
     /**
-     * Builds the full path for a texture map type, trying both .png and .jpg extensions.
+     * Builds the full path for a texture map type, trying .png, .jpg, and .exr extensions.
      *
      * @param mapType Map type suffix (e.g., "diff", "nor_gl", "ao")
      * @return Full internal file path with working extension, or null if not found
@@ -69,6 +69,12 @@ public class TextureSet {
         String jpgPath = baseName + ".jpg";
         if (Gdx.files.internal(jpgPath).exists()) {
             return jpgPath;
+        }
+
+        // Try .exr for high dynamic range textures
+        String exrPath = baseName + ".exr";
+        if (Gdx.files.internal(exrPath).exists()) {
+            return exrPath;
         }
 
         // Not found
@@ -157,10 +163,10 @@ public class TextureSet {
     /**
      * Checks if this texture set has all essential maps loaded.
      *
-     * @return True if diffuse and normal maps are available
+     * @return True if at least the diffuse map is available
      */
     public boolean isValid() {
-        return diffuseMap != null && normalMap != null;
+        return diffuseMap != null;
     }
 
     /**

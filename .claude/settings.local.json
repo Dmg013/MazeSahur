@@ -7,7 +7,8 @@
       "Bash(./gradlew:*)",
       "Bash(dir:*)",
       "Bash(.gradlew.bat jar --dry-run)",
-      "Bash(./gradlew.bat jar:*)"
+      "Bash(./gradlew.bat jar:*)",
+      "Bash(timeout 10 bash:*)"
     ],
     "deny": [],
     "ask": []

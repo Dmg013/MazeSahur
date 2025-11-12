@@ -33,10 +33,12 @@ public class MazeRenderer {
     private ModelBatch modelBatch;
     private Model wallModel;
     private Model floorModel;
+    private Model roofModel;
     private Model enemyModel;
     private Model ceilingLampModel;
 
     private ModelInstance floorInstance;
+    private ModelInstance roofInstance;
     private List<ModelInstance> wallInstances;
     private ModelInstance enemyInstance;
     private List<ModelInstance> ceilingLampInstances;
@@ -115,6 +117,24 @@ public class MazeRenderer {
         floorInstance.transform.setToTranslation(
             floorSize / 2f,
             -0.05f,
+            floorSize / 2f
+        );
+
+        // Create roof model
+        final Material roofMaterial = materialManager.createRoofMaterial();
+        roofModel = modelBuilder.createBox(
+            floorSize, 0.1f, floorSize,
+            roofMaterial,
+            VertexAttributes.Usage.Position
+                | VertexAttributes.Usage.Normal
+                | VertexAttributes.Usage.TextureCoordinates
+        );
+
+        // Create roof instance (positioned at ceiling height)
+        roofInstance = new ModelInstance(roofModel);
+        roofInstance.transform.setToTranslation(
+            floorSize / 2f,
+            GameConfig.WALL_HEIGHT + 0.05f,
             floorSize / 2f
         );
 
@@ -407,6 +427,7 @@ public class MazeRenderer {
     public void render(final PerspectiveCamera camera) {
         modelBatch.begin(camera);
         modelBatch.render(floorInstance);
+        modelBatch.render(roofInstance);
         for (final ModelInstance wall : wallInstances) {
             modelBatch.render(wall);
         }
@@ -445,6 +466,7 @@ public class MazeRenderer {
         if (modelBatch != null) modelBatch.dispose();
         if (wallModel != null) wallModel.dispose();
         if (floorModel != null) floorModel.dispose();
+        if (roofModel != null) roofModel.dispose();
         if (enemyModel != null) enemyModel.dispose();
         if (ceilingLampModel != null) ceilingLampModel.dispose();
     }

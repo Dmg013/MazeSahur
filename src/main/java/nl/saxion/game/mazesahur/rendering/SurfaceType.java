@@ -35,6 +35,19 @@ public enum SurfaceType {
         new Color(0.08f, 0.08f, 0.08f, 1f),   // Specular (slight sheen from dampness)
         new Color(0.6f, 0.6f, 0.65f, 1f),     // Ambient
         2.5f                                   // Shininess (slightly smoother than wall)
+    ),
+
+    /**
+     * Concrete layers roof - layered concrete ceiling with reflective surface.
+     */
+    ROOF(
+        "textures/roof/",
+        "concrete_layers",
+        "4k",
+        new Color(0.85f, 0.85f, 0.88f, 1f),   // Diffuse tint (brighter for reflection)
+        new Color(0.6f, 0.6f, 0.65f, 1f),     // Specular (high reflection)
+        new Color(0.5f, 0.5f, 0.55f, 1f),     // Ambient (darker for ceiling)
+        64.0f                                  // Shininess (reflective surface)
     );
 
     private final String basePath;

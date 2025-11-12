@@ -69,6 +69,16 @@ public class MaterialManager {
     }
 
     /**
+     * Creates a realistic roof material with proper PBR-like properties.
+     * Uses full texture set including diffuse, normal, AO, roughness, and displacement.
+     *
+     * @return Roof material
+     */
+    public Material createRoofMaterial() {
+        return createMaterial(SurfaceType.ROOF);
+    }
+
+    /**
      * Creates a material for a specific surface type using its full texture set.
      *
      * @param surfaceType The surface type to create material for
