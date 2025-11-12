@@ -94,20 +94,22 @@ public class MaterialManager {
             material.set(TextureAttribute.createNormal(textureSet.getNormalMap()));
         }
 
-        // Apply displacement/height map for parallax occlusion mapping
+        // Apply displacement/height map for parallax occlusion mapping (use Bump attribute)
         if (textureSet.getDisplacementMap() != null) {
-            // Create custom texture attribute for height map
             material.set(new TextureAttribute(TextureAttribute.Bump, textureSet.getDisplacementMap()));
         }
 
-        // Apply roughness map for per-pixel specular control
-        if (textureSet.getRoughnessMap() != null) {
-            material.set(new TextureAttribute(TextureAttribute.Roughness, textureSet.getRoughnessMap()));
+        // Apply roughness map for per-pixel specular control (use Reflection as proxy)
+        // Note: Reflection attribute repurposed for roughness in custom shader
+        if (textureSet.getRoughnessMap() != null && textureSet.getDisplacementMap() == null) {
+            // Only apply if displacement is not used (to avoid conflicts)
+            material.set(new TextureAttribute(TextureAttribute.Reflection, textureSet.getRoughnessMap()));
         }
 
-        // Apply specular map for per-pixel reflection control
+        // Apply specular map for per-pixel reflection control (use Emissive as proxy)
+        // Note: Emissive attribute repurposed for specular map in custom shader
         if (textureSet.getSpecularMap() != null) {
-            material.set(new TextureAttribute(TextureAttribute.Specular, textureSet.getSpecularMap()));
+            material.set(new TextureAttribute(TextureAttribute.Emissive, textureSet.getSpecularMap()));
         }
 
         // Apply specular properties (used as defaults if maps not available)

@@ -19,8 +19,9 @@ import com.badlogic.gdx.utils.GdxRuntimeException;
  */
 public class SpotlightShader implements Shader {
     // Custom texture attribute types for PBR textures
-    private static final long ROUGHNESS_TEXTURE = com.badlogic.gdx.graphics.g3d.Attribute.register("roughnessTexture");
-    private static final long SPECULAR_TEXTURE = com.badlogic.gdx.graphics.g3d.Attribute.register("specularTexture");
+    // Reflection is repurposed for roughness maps, Emissive for specular maps
+    private static final long ROUGHNESS_TEXTURE = com.badlogic.gdx.graphics.g3d.attributes.TextureAttribute.Reflection;
+    private static final long SPECULAR_TEXTURE = com.badlogic.gdx.graphics.g3d.attributes.TextureAttribute.Emissive;
 
     private ShaderProgram program;
     private Camera camera;
@@ -186,10 +187,7 @@ public class SpotlightShader implements Shader {
             renderable.material.get(com.badlogic.gdx.graphics.g3d.attributes.TextureAttribute.class,
                 com.badlogic.gdx.graphics.g3d.attributes.TextureAttribute.Bump);
 
-        // Custom texture attribute types for roughness and specular
-        final long ROUGHNESS_TEXTURE = com.badlogic.gdx.graphics.g3d.Attribute.register("roughnessTexture");
-        final long SPECULAR_TEXTURE = com.badlogic.gdx.graphics.g3d.Attribute.register("specularTexture");
-
+        // Get roughness and specular attributes using the class-level constants
         final com.badlogic.gdx.graphics.g3d.attributes.TextureAttribute roughnessAttr =
             renderable.material.get(com.badlogic.gdx.graphics.g3d.attributes.TextureAttribute.class, ROUGHNESS_TEXTURE);
 
