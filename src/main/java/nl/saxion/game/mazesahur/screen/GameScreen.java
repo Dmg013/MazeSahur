@@ -13,6 +13,7 @@ import nl.saxion.game.mazesahur.rendering.MaterialManager;
 import nl.saxion.game.mazesahur.rendering.MazeRenderer;
 import nl.saxion.game.mazesahur.world.Maze;
 import nl.saxion.game.mazesahur.ui.GameUI;
+import nl.saxion.gameapp.GameApp;
 import nl.saxion.gameapp.screens.ScalableGameScreen;
 
 /**
@@ -50,6 +51,13 @@ public class GameScreen extends ScalableGameScreen {
 
     // Initialization flag to prevent double-loading
     private boolean initialized = false;
+
+    // Death and jumpscare state
+    private boolean isDead = false;
+    private float jumpscareTimer = 0f;
+    private float survivalTime = 0f;
+    private Vector3 jumpscareShakeOffset = new Vector3();
+    private boolean jumpscareActive = false;
 
     /**
      * Creates a new game screen with default settings.
@@ -130,16 +138,34 @@ public class GameScreen extends ScalableGameScreen {
 
     @Override
     public void render(final float delta) {
-        // Update game state
-        handleInput(delta);
-        player.update(delta, maze);
-        enemy.update(delta);
-        updateCamera();
+        // Handle jumpscare sequence
+        if (jumpscareActive) {
+            handleJumpscare(delta);
+            return;
+        }
 
-        // Update lighting
-        final boolean isMoving = player.isMoving();
-        lightingManager.updateFlashlight(player.getPosition(), camera.direction, delta, isMoving);
-        mazeRenderer.updateLampFlicker(delta);
+        // Check for death condition
+        if (!isDead) {
+            survivalTime += delta;
+            checkDeathCondition();
+        }
+
+        // Skip normal game logic if dead
+        if (!isDead) {
+            // Update game state
+            handleInput(delta);
+            player.update(delta, maze);
+            enemy.update(delta);
+            updateCamera();
+
+            // Update lighting
+            final boolean isMoving = player.isMoving();
+            lightingManager.updateFlashlight(player.getPosition(), camera.direction, delta, isMoving);
+            mazeRenderer.updateLampFlicker(delta);
+
+            // Handle input
+            handleGameInput();
+        }
 
         // Clear screen
         Gdx.gl.glClearColor(0.0f, 0.0f, 0.0f, 1f);
@@ -149,11 +175,10 @@ public class GameScreen extends ScalableGameScreen {
         mazeRenderer.render(camera);
         mazeRenderer.renderEnemy(camera, enemy);
 
-        // Render UI
-        gameUI.render(this, player, enemy, lightingManager);
-
-        // Handle input
-        handleGameInput();
+        // Render UI (hide during jumpscare)
+        if (!jumpscareActive) {
+            gameUI.render(this, player, enemy, lightingManager);
+        }
     }
 
     /**
@@ -321,6 +346,11 @@ public class GameScreen extends ScalableGameScreen {
     private void updateCamera() {
         camera.position.set(player.getPosition());
 
+        // Apply jumpscare screen shake if active
+        if (jumpscareActive) {
+            camera.position.add(jumpscareShakeOffset);
+        }
+
         // Calculate look direction
         final double yawRad = Math.toRadians(yaw);
         final double pitchRad = Math.toRadians(pitch);
@@ -331,6 +361,109 @@ public class GameScreen extends ScalableGameScreen {
 
         camera.direction.set(lookX, lookY, lookZ).nor();
         camera.update();
+    }
+
+    /**
+     * Checks if the player has been caught by the enemy.
+     */
+    private void checkDeathCondition() {
+        // Calculate horizontal distance only (ignore Y-axis height difference)
+        final Vector3 playerPos = player.getPosition();
+        final Vector3 enemyPos = enemy.getPosition();
+
+        final float dx = playerPos.x - enemyPos.x;
+        final float dz = playerPos.z - enemyPos.z;
+        final float horizontalDistance = (float) Math.sqrt(dx * dx + dz * dz);
+
+        if (horizontalDistance <= enemy.getCatchRadius()) {
+            triggerDeath();
+        }
+    }
+
+    /**
+     * Triggers the death sequence with jumpscare effects.
+     */
+    private void triggerDeath() {
+        if (isDead) return; // Already dead
+
+        isDead = true;
+        jumpscareActive = true;
+        jumpscareTimer = 0f;
+
+        System.out.println("[GameScreen] Player caught! Triggering jumpscare...");
+
+        // Snap camera to face enemy
+        final Vector3 toEnemy = enemy.getPosition().cpy().sub(player.getPosition());
+        final float angleToEnemy = (float) Math.toDegrees(Math.atan2(toEnemy.x, -toEnemy.z));
+        yaw = angleToEnemy;
+        pitch = 0f; // Level camera
+    }
+
+    /**
+     * Handles the jumpscare animation sequence.
+     * Sequence: Red flash -> Screen shake -> Fade to black -> Death screen
+     */
+    private void handleJumpscare(final float delta) {
+        jumpscareTimer += delta;
+
+        final float progress = jumpscareTimer / GameConfig.JUMPSCARE_DURATION;
+
+        // Phase 1 (0-0.3s): Red flash (quick fade out)
+        if (jumpscareTimer < 0.3f) {
+            final float flashAlpha = 1.0f - (jumpscareTimer / 0.3f);
+            Gdx.gl.glClearColor(flashAlpha, 0f, 0f, 1f);
+        }
+
+        // Phase 2 (0-0.5s): Violent screen shake
+        if (jumpscareTimer < 0.5f) {
+            final float shakeIntensity = GameConfig.JUMPSCARE_SHAKE_INTENSITY * (1.0f - jumpscareTimer / 0.5f);
+            jumpscareShakeOffset.set(
+                (float) (Math.random() - 0.5) * shakeIntensity * 2,
+                (float) (Math.random() - 0.5) * shakeIntensity * 2,
+                (float) (Math.random() - 0.5) * shakeIntensity * 2
+            );
+        } else {
+            jumpscareShakeOffset.set(0, 0, 0);
+        }
+
+        // Update camera to apply shake
+        updateCamera();
+
+        // Clear and render scene
+        Gdx.gl.glClear(GL20.GL_COLOR_BUFFER_BIT | GL20.GL_DEPTH_BUFFER_BIT);
+        mazeRenderer.render(camera);
+        mazeRenderer.renderEnemy(camera, enemy);
+
+        // Phase 3 (0.5s-1.5s): Fade to black overlay
+        if (jumpscareTimer > 0.5f) {
+            // Draw fading black overlay (simplified - would need SpriteBatch in real implementation)
+            final float fadeAlpha = Math.min(1.0f, (jumpscareTimer - 0.5f) / 1.0f);
+            Gdx.gl.glEnable(GL20.GL_BLEND);
+            Gdx.gl.glBlendFunc(GL20.GL_SRC_ALPHA, GL20.GL_ONE_MINUS_SRC_ALPHA);
+            Gdx.gl.glClearColor(0f, 0f, 0f, fadeAlpha);
+            Gdx.gl.glDisable(GL20.GL_BLEND);
+        }
+
+        // Phase 4 (1.5s+): Transition to death screen
+        if (jumpscareTimer >= GameConfig.JUMPSCARE_DURATION) {
+            transitionToDeathScreen();
+        }
+    }
+
+    /**
+     * Transitions from the game screen to the death screen.
+     */
+    private void transitionToDeathScreen() {
+        System.out.println("[GameScreen] Transitioning to death screen...");
+
+        final DeathScreen deathScreen = new DeathScreen(survivalTime);
+
+        // Initialize the death screen
+        deathScreen.show();
+
+        // Register and switch to death screen (GameApp handles disposing old screen)
+        GameApp.addScreen("DeathScreen", deathScreen);
+        GameApp.switchScreen("DeathScreen");
     }
 
     @Override

@@ -439,5 +439,9 @@ public class Enemy {
     public float getTimeSincePlayerSeen() {
         return timeSincePlayerSeen;
     }
+
+    public float getCatchRadius() {
+        return GameConfig.ENEMY_CATCH_RADIUS;
+    }
 }
 

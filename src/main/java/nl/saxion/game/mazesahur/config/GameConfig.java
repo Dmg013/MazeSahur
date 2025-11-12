@@ -38,12 +38,18 @@ public final class GameConfig {
     // Enemy settings
     public static final float ENEMY_SPEED = 4f;
     public static final float ENEMY_COLLISION_RADIUS = 3.5f;
+    public static final float ENEMY_CATCH_RADIUS = 2.0f;
     public static final float ENEMY_HEIGHT = 0.5f;
     public static final float ENEMY_SCALE = 0.005f;
     public static final float ENEMY_DETECTION_RANGE = 100f;
     public static final float ENEMY_CHASE_MEMORY_DURATION = 10f;
     public static final float PATH_UPDATE_INTERVAL = 3f;
     public static final float WANDER_UPDATE_INTERVAL = 2f;
+
+    // Death & Jumpscare settings
+    public static final float JUMPSCARE_DURATION = 1.5f;
+    public static final float JUMPSCARE_SHAKE_INTENSITY = 0.5f;
+    public static final float DEATH_SCREEN_FADE_DURATION = 2.0f;
     
     // Lighting settings
     public static final float FLASHLIGHT_INTENSITY = 1.5f;
