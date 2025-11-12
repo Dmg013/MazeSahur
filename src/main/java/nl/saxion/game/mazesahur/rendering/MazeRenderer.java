@@ -45,6 +45,7 @@ public class MazeRenderer {
     // Lamp flickering
     private float[] lampFlickerTimers;
     private float[] lampFlickerIntensities;
+    private int flickerUpdateCounter = 0; // Update every N frames for performance
 
     /**
      * Creates a new maze renderer.
@@ -197,91 +198,74 @@ public class MazeRenderer {
         );
 
         // Place lamps at regular intervals throughout the maze corridors
-        final int lampSpacing = 3; // Place a lamp every 3 cells for more coverage
+        final int lampSpacing = 7; // Place a lamp every 7 cells - more spread out
         final float ceilingHeight = GameConfig.WALL_HEIGHT; // Place at ceiling height
         final float lampScale = 0.05f; // Scale down the lamp model (much smaller)
 
+        int lampsPlaced = 0;
+        int corridorsChecked = 0;
+
         // Place lamps in a grid pattern throughout corridors
-        for (int z = 2; z < maze.getHeight() - 2; z += lampSpacing) {
-            for (int x = 2; x < maze.getWidth() - 2; x += lampSpacing) {
-                // Only place lamps in open areas (corridors, not walls)
-                if (!maze.isWall(x, z)) {
-                    final ModelInstance lampInstance = new ModelInstance(ceilingLampModel);
+        // Try multiple starting offsets to ensure we find corridors
+        for (int startZ = 0; startZ <= 2; startZ++) {
+            for (int startX = 0; startX <= 2; startX++) {
+                for (int z = startZ; z < maze.getHeight(); z += lampSpacing) {
+                    for (int x = startX; x < maze.getWidth(); x += lampSpacing) {
+                        corridorsChecked++;
+                        // Only place lamps in open areas (corridors, not walls)
+                        if (!maze.isWall(x, z)) {
+                            // Check if we already placed a lamp very close to this position
+                            boolean tooClose = false;
+                            for (Vector3 existingLamp : lampLightPositions) {
+                                float dx = existingLamp.x - (x * GameConfig.CELL_SIZE + GameConfig.CELL_SIZE / 2f);
+                                float dz = existingLamp.z - (z * GameConfig.CELL_SIZE + GameConfig.CELL_SIZE / 2f);
+                                float distSq = dx * dx + dz * dz;
+                                if (distSq < GameConfig.CELL_SIZE * GameConfig.CELL_SIZE * 4) { // Closer than 4 cells
+                                    tooClose = true;
+                                    break;
+                                }
+                            }
 
-                    // Position lamp at ceiling, centered in cell
-                    final float xPos = x * GameConfig.CELL_SIZE + GameConfig.CELL_SIZE / 2f;
-                    final float yPos = ceilingHeight - 0.2f; // Slightly below ceiling
-                    final float zPos = z * GameConfig.CELL_SIZE + GameConfig.CELL_SIZE / 2f;
+                            if (!tooClose) {
+                                final ModelInstance lampInstance = new ModelInstance(ceilingLampModel);
 
-                    lampInstance.transform.setToTranslation(xPos, yPos, zPos);
-                    lampInstance.transform.scale(lampScale, lampScale, lampScale);
+                                // Position lamp at ceiling, centered in cell
+                                final float xPos = x * GameConfig.CELL_SIZE + GameConfig.CELL_SIZE / 2f;
+                                final float yPos = ceilingHeight - 0.2f; // Slightly below ceiling
+                                final float zPos = z * GameConfig.CELL_SIZE + GameConfig.CELL_SIZE / 2f;
 
-                    // Apply textures to lamp materials with bright yellow glow
-                    for (final com.badlogic.gdx.graphics.g3d.Material mat : lampInstance.materials) {
-                        mat.clear();
-                        // Add diffuse texture
-                        mat.set(com.badlogic.gdx.graphics.g3d.attributes.TextureAttribute.createDiffuse(lampTexture));
-                        // Add emissive texture for glowing effect
-                        mat.set(com.badlogic.gdx.graphics.g3d.attributes.TextureAttribute.createEmissive(lampEmissive));
-                        // Add VERY bright yellow emissive color for glowing bulb
-                        mat.set(com.badlogic.gdx.graphics.g3d.attributes.ColorAttribute.createEmissive(
-                            3.0f, 2.7f, 1.5f, 1.0f // SUPER BRIGHT yellow glow
-                        ));
-                        // Add yellow diffuse tint
-                        mat.set(com.badlogic.gdx.graphics.g3d.attributes.ColorAttribute.createDiffuse(
-                            1.0f, 0.95f, 0.6f, 1.0f // Yellow tint
-                        ));
+                                lampInstance.transform.setToTranslation(xPos, yPos, zPos);
+                                lampInstance.transform.scale(lampScale, lampScale, lampScale);
+
+                                // Apply textures to lamp materials with subtle yellow glow
+                                for (final com.badlogic.gdx.graphics.g3d.Material mat : lampInstance.materials) {
+                                    mat.clear();
+                                    // Add diffuse texture
+                                    mat.set(com.badlogic.gdx.graphics.g3d.attributes.TextureAttribute.createDiffuse(lampTexture));
+                                    // Add emissive texture for glowing effect
+                                    mat.set(com.badlogic.gdx.graphics.g3d.attributes.TextureAttribute.createEmissive(lampEmissive));
+                                    // Add subtle yellow emissive color for glowing bulb
+                                    mat.set(com.badlogic.gdx.graphics.g3d.attributes.ColorAttribute.createEmissive(
+                                        0.8f, 0.7f, 0.4f, 1.0f // Subtle warm glow
+                                    ));
+                                    // Add yellow diffuse tint
+                                    mat.set(com.badlogic.gdx.graphics.g3d.attributes.ColorAttribute.createDiffuse(
+                                        1.0f, 0.95f, 0.6f, 1.0f // Yellow tint
+                                    ));
+                                }
+
+                                ceilingLampInstances.add(lampInstance);
+                                // Store light position at the lamp bulb (higher up for better cone)
+                                lampLightPositions.add(new Vector3(xPos, yPos + 0.3f, zPos));
+                                lampsPlaced++;
+                            }
+                        }
                     }
-
-                    ceilingLampInstances.add(lampInstance);
-                    // Store light position (slightly below lamp model for better lighting)
-                    lampLightPositions.add(new Vector3(xPos, yPos - 0.1f, zPos));
                 }
             }
         }
 
-        // Add additional lamps in between the main grid for better coverage
-        for (int z = 2; z < maze.getHeight() - 2; z += lampSpacing) {
-            for (int x = 2; x < maze.getWidth() - 2; x += lampSpacing) {
-                // Add lamps at offset positions (between grid points)
-                final int xOffset = x + lampSpacing / 2;
-                final int zOffset = z + lampSpacing / 2;
-
-                if (xOffset < maze.getWidth() - 2 && zOffset < maze.getHeight() - 2 &&
-                    !maze.isWall(xOffset, zOffset)) {
-                    final ModelInstance lampInstance = new ModelInstance(ceilingLampModel);
-
-                    final float xPos = xOffset * GameConfig.CELL_SIZE + GameConfig.CELL_SIZE / 2f;
-                    final float yPos = ceilingHeight - 0.2f;
-                    final float zPos = zOffset * GameConfig.CELL_SIZE + GameConfig.CELL_SIZE / 2f;
-
-                    lampInstance.transform.setToTranslation(xPos, yPos, zPos);
-                    lampInstance.transform.scale(lampScale, lampScale, lampScale);
-
-                    // Apply textures to lamp materials with bright yellow glow
-                    for (final com.badlogic.gdx.graphics.g3d.Material mat : lampInstance.materials) {
-                        mat.clear();
-                        // Add diffuse texture
-                        mat.set(com.badlogic.gdx.graphics.g3d.attributes.TextureAttribute.createDiffuse(lampTexture));
-                        // Add emissive texture for glowing effect
-                        mat.set(com.badlogic.gdx.graphics.g3d.attributes.TextureAttribute.createEmissive(lampEmissive));
-                        // Add VERY bright yellow emissive color for glowing bulb
-                        mat.set(com.badlogic.gdx.graphics.g3d.attributes.ColorAttribute.createEmissive(
-                            3.0f, 2.7f, 1.5f, 1.0f // SUPER BRIGHT yellow glow
-                        ));
-                        // Add yellow diffuse tint
-                        mat.set(com.badlogic.gdx.graphics.g3d.attributes.ColorAttribute.createDiffuse(
-                            1.0f, 0.95f, 0.6f, 1.0f // Yellow tint
-                        ));
-                    }
-
-                    ceilingLampInstances.add(lampInstance);
-                    lampLightPositions.add(new Vector3(xPos, yPos - 0.1f, zPos));
-                }
-            }
-        }
-
-        System.out.println("[MazeRenderer] Loaded " + ceilingLampInstances.size() + " ceiling lamps");
+        System.out.println("[MazeRenderer] Loaded " + ceilingLampInstances.size() + " ceiling lamps (balanced for performance and coverage)");
 
         // Pass lamp positions to shader for lighting
         setupLampLights();
@@ -352,9 +336,9 @@ public class MazeRenderer {
         for (int i = 0; i < numLights; i++) {
             positions[i] = lampLightPositions.get(i);
             colors[i] = new Vector3(1.0f, 0.85f, 0.5f); // Warm yellow lamp light
-            intensities[i] = 2.5f; // Base intensity
+            intensities[i] = 0.8f; // Subtle base intensity
             lampFlickerTimers[i] = (float) (Math.random() * 10.0); // Random start times
-            lampFlickerIntensities[i] = 2.5f;
+            lampFlickerIntensities[i] = 0.8f;
         }
 
         lightingManager.getShader().setPointLights(positions, colors, intensities, numLights);
@@ -362,12 +346,20 @@ public class MazeRenderer {
     }
 
     /**
-     * Updates lamp flickering effects with extreme on/off behavior.
+     * Updates lamp flickering effects with smooth, subtle variations.
+     * Optimized to update less frequently for better performance.
      *
      * @param delta Time since last frame
      */
     public void updateLampFlicker(final float delta) {
         if (lampFlickerTimers == null) return;
+
+        // Only update every 8 frames for MUCH better performance on potato PCs
+        flickerUpdateCounter++;
+        if (flickerUpdateCounter < 8) {
+            return;
+        }
+        flickerUpdateCounter = 0;
 
         final int numLights = lampFlickerTimers.length;
         final Vector3[] positions = new Vector3[numLights];
@@ -375,51 +367,32 @@ public class MazeRenderer {
         final float[] intensities = new float[numLights];
 
         for (int i = 0; i < numLights; i++) {
-            lampFlickerTimers[i] += delta;
+            lampFlickerTimers[i] += delta * 8; // Compensate for skipped frames
 
-            // EXTREME broken lamp flicker - rapid on/off switching
-            // Each lamp has different flicker pattern
-            final float flickerSpeed = 12.0f + (i % 5) * 3.0f; // Fast flickering
+            // Subtle, realistic flicker - smooth sine wave variations
+            // Each lamp has slightly different flicker pattern
+            final float flickerSpeed = 0.8f + (i % 5) * 0.15f; // Very slow, gentle flickering
             final float randomOffset = (float) Math.sin(i * 3.14159f) * 100.0f;
 
-            // Create sharp on/off pattern using sine wave with threshold
-            float rawFlicker = (float) Math.sin((lampFlickerTimers[i] + randomOffset) * flickerSpeed);
+            // Create smooth flicker pattern using sine wave
+            float flicker = (float) Math.sin((lampFlickerTimers[i] + randomOffset) * flickerSpeed);
 
-            // Add secondary fast flutter
-            float flutter = (float) Math.sin(lampFlickerTimers[i] * 25.0f + i);
+            // Add subtle secondary variation for more natural effect
+            float variation = (float) Math.sin(lampFlickerTimers[i] * 0.5f + i) * 0.15f;
 
-            // Combine for chaotic effect
-            rawFlicker += flutter * 0.3f;
+            // Combine for subtle, smooth flickering (range: -1.15 to 1.15)
+            flicker += variation;
 
-            // Convert to hard on/off (no smooth transitions)
-            float intensity;
-            if (rawFlicker > 0.2f) {
-                intensity = 3.5f; // FULL ON
-            } else if (rawFlicker > -0.2f) {
-                // Random rapid flickering zone
-                if (Math.random() < 0.5f) {
-                    intensity = 3.5f; // ON
-                } else {
-                    intensity = 0.0f; // OFF
-                }
-            } else {
-                intensity = 0.0f; // FULL OFF
-            }
+            // Map to intensity range: 0.3 to 1.2 (subtle variations, never fully off)
+            float intensity = 0.75f + flicker * 0.225f;
 
-            // Random complete shutoffs (more frequent)
-            if (Math.random() < 0.01f) { // 1% chance per frame
-                intensity = 0.0f; // Lamp goes completely off
-            }
-
-            // Occasional strobe effect
-            if (Math.random() < 0.005f) { // 0.5% chance
-                intensity = (Math.random() < 0.5f) ? 3.5f : 0.0f;
-            }
+            // Clamp to safe range
+            intensity = Math.max(0.3f, Math.min(1.2f, intensity));
 
             lampFlickerIntensities[i] = intensity;
 
             positions[i] = lampLightPositions.get(i);
-            colors[i] = new Vector3(1.0f, 0.9f, 0.4f); // Bright yellow
+            colors[i] = new Vector3(1.0f, 0.85f, 0.5f); // Warm yellow
             intensities[i] = intensity;
         }
 

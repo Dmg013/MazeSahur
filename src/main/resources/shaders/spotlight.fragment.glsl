@@ -8,10 +8,13 @@
     uniform sampler2D u_heightTexture;
     uniform sampler2D u_roughnessTexture;
     uniform sampler2D u_specularTexture;
+    uniform sampler2D u_emissiveTexture;
     uniform float u_heightScale;
     uniform float u_hasHeightMap;
     uniform float u_hasRoughnessMap;
     uniform float u_hasSpecularMap;
+    uniform float u_hasEmissiveMap;
+    uniform vec3 u_emissiveColor;
 
     uniform vec3 u_ambientLight;
     uniform vec3 u_spotPosition;      // Flashlight position in world space
@@ -57,14 +60,14 @@
         float rayLength = length(rayDir);
         rayDir = normalize(rayDir);
 
-        // Use adaptive step size - larger steps for faster performance
-        float stepSize = u_cellSize * 0.4; // Larger steps (was 0.25)
+        // Use adaptive step size - VERY large steps for potato PC performance
+        float stepSize = u_cellSize * 0.6; // Even larger steps for better performance
         int maxSteps = int(rayLength / stepSize) + 1;
 
-        // Cap max steps for performance (lights far away don't need perfect shadows)
-        if (maxSteps > 30) {
-            maxSteps = 30;
-            stepSize = rayLength / 30.0;
+        // AGGRESSIVE cap for potato PCs (lights far away don't need perfect shadows)
+        if (maxSteps > 20) {
+            maxSteps = 20;
+            stepSize = rayLength / 20.0;
         }
 
         // Start ray slightly offset to avoid self-shadowing
@@ -144,9 +147,9 @@
             return texCoords; // Too shallow angle, skip parallax
         }
 
-        // Conservative layer count
-        const float minLayers = 8.0;
-        const float maxLayers = 16.0;
+        // VERY conservative layer count for potato PCs
+        const float minLayers = 4.0;
+        const float maxLayers = 8.0;
         float numLayers = mix(maxLayers, minLayers, viewDotNormal);
 
         // Calculate size of each layer
@@ -169,8 +172,8 @@
         vec2 currentTexCoords = texCoords;
         float currentDepthMapValue = texture2D(u_heightTexture, currentTexCoords).r;
 
-        // Ray marching loop - conservative iteration count
-        for (int i = 0; i < 16; i++) {
+        // Ray marching loop - VERY conservative for potato PCs
+        for (int i = 0; i < 8; i++) {
             if (currentLayerDepth >= currentDepthMapValue) {
                 break; // Hit the surface
             }
@@ -284,12 +287,27 @@
 
     vec3 spotlight = (diffuse + specular) * intensity * attenuation * u_spotIntensity;
 
-    // ===== POINT LIGHTS (Ceiling lamps) with soft shadows =====
+    // ===== POINT LIGHTS (Ceiling lamps) with spotlight cone effect and soft shadows =====
     vec3 pointLighting = vec3(0.0);
     for (int i = 0; i < u_numPointLights; i++) {
         vec3 lightDir = u_pointLightPositions[i] - v_position;
         float distance = length(lightDir);
         lightDir = normalize(lightDir);
+
+        // Ceiling lamps shine downward in a cone (spotlight effect)
+        vec3 lampDirection = vec3(0.0, -1.0, 0.0); // Always point down
+        float lampTheta = dot(-lightDir, lampDirection);
+
+        // Spotlight cone: inner 45 degrees, outer 65 degrees (wider than flashlight)
+        float lampInnerCutoff = cos(radians(45.0));
+        float lampOuterCutoff = cos(radians(65.0));
+        float lampEpsilon = lampInnerCutoff - lampOuterCutoff;
+        float lampConeIntensity = clamp((lampTheta - lampOuterCutoff) / lampEpsilon, 0.0, 1.0);
+
+        // Skip if outside cone (optimization)
+        if (lampConeIntensity < 0.01) {
+            continue;
+        }
 
         // Soft shadow calculation (0.0 = fully shadowed, 1.0 = fully lit)
         float shadowFactor = getSoftShadow(v_position, u_pointLightPositions[i]);
@@ -309,14 +327,23 @@
         vec3 pointHalfwayDir = normalize(lightDir + viewDir);
         float pointSpec = pow(max(dot(normal, pointHalfwayDir), 0.0), shininess);
 
-        // Add point light contribution with soft shadow
+        // Add point light contribution with soft shadow and cone effect
         vec3 diffuse = u_pointLightColors[i] * diff * texColor.rgb * u_pointLightIntensities[i];
         vec3 specular = u_pointLightColors[i] * pointSpec * specularStrength * u_pointLightIntensities[i];
-        pointLighting += (diffuse + specular) * attenuation * shadowFactor;
+        pointLighting += (diffuse + specular) * attenuation * shadowFactor * lampConeIntensity;
     }
 
-    // Combine all lighting
-    vec3 litColor = ambient + moonlight + spotlight + pointLighting;
+    // ===== EMISSIVE GLOW (Self-illumination for lamps) =====
+    vec3 emissiveGlow = vec3(0.0);
+    if (u_hasEmissiveMap > 0.5) {
+        // Sample emissive texture
+        vec3 emissiveMap = texture2D(u_emissiveTexture, texCoords).rgb;
+        // Apply emissive color and make it bright
+        emissiveGlow = emissiveMap * u_emissiveColor * 3.0; // Boost brightness
+    }
+
+    // Combine all lighting + emissive (emissive is NOT affected by lighting/shadows)
+    vec3 litColor = ambient + moonlight + spotlight + pointLighting + emissiveGlow;
 
     // ===== FOG CALCULATION (Distance-based exponential fog) =====
     float distanceToCamera = length(u_cameraPosition - v_position);

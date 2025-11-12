@@ -70,6 +70,11 @@ public class SpotlightShader implements Shader {
             pointLightColors[i] = new Vector3(1.0f, 0.9f, 0.7f); // Warm light color
             pointLightIntensities[i] = 1.0f;
         }
+
+        // Enable shader precompilation hints for better performance on Metal/Mac
+        ShaderProgram.prependVertexCode = "#ifdef GL_ES\nprecision mediump float;\n#endif\n";
+        ShaderProgram.prependFragmentCode = "#ifdef GL_ES\nprecision mediump float;\n#endif\n";
+
         final String vertexShader = Gdx.files.internal("shaders/spotlight.vertex.glsl").readString();
         final String fragmentShader = Gdx.files.internal("shaders/spotlight.fragment.glsl").readString();
 
@@ -78,6 +83,22 @@ public class SpotlightShader implements Shader {
         if (!program.isCompiled()) {
             throw new GdxRuntimeException("Shader compilation failed:\n" + program.getLog());
         }
+
+        // AGGRESSIVE shader warmup for potato PCs - force GPU compilation at startup
+        System.out.println("[SpotlightShader] Precompiling shader (may take a moment on low-end systems)...");
+        program.bind();
+
+        // Set ALL uniforms to force complete GPU compilation
+        program.setUniformf("u_spotIntensity", 0.0f);
+        program.setUniformf("u_heightScale", 0.06f);
+        program.setUniformf("u_hasHeightMap", 0.0f);
+        program.setUniformf("u_hasRoughnessMap", 0.0f);
+        program.setUniformf("u_hasSpecularMap", 0.0f);
+        program.setUniformf("u_hasEmissiveMap", 0.0f);
+        program.setUniformi("u_numPointLights", 0);
+        program.setUniformf("u_fogDensity", 0.12f);
+
+        System.out.println("[SpotlightShader] Shader fully precompiled and ready for optimal performance");
     }
 
     @Override
@@ -251,6 +272,40 @@ public class SpotlightShader implements Shader {
             if (diffuseAttr != null && diffuseAttr.textureDescription.texture != null) {
                 final int unit = context.textureBinder.bind(diffuseAttr.textureDescription.texture);
                 program.setUniformi("u_specularTexture", unit);
+            }
+        }
+
+        // Bind emissive texture and color for self-illumination (lamps)
+        final com.badlogic.gdx.graphics.g3d.attributes.TextureAttribute emissiveTextureAttr =
+            renderable.material.get(com.badlogic.gdx.graphics.g3d.attributes.TextureAttribute.class,
+                com.badlogic.gdx.graphics.g3d.attributes.TextureAttribute.Emissive);
+
+        final com.badlogic.gdx.graphics.g3d.attributes.ColorAttribute emissiveColorAttr =
+            renderable.material.get(com.badlogic.gdx.graphics.g3d.attributes.ColorAttribute.class,
+                com.badlogic.gdx.graphics.g3d.attributes.ColorAttribute.Emissive);
+
+        if (emissiveTextureAttr != null && emissiveTextureAttr.textureDescription.texture != null) {
+            final int unit = context.textureBinder.bind(emissiveTextureAttr.textureDescription.texture);
+            program.setUniformi("u_emissiveTexture", unit);
+            program.setUniformf("u_hasEmissiveMap", 1.0f);
+
+            // Set emissive color
+            if (emissiveColorAttr != null) {
+                program.setUniformf("u_emissiveColor",
+                    emissiveColorAttr.color.r,
+                    emissiveColorAttr.color.g,
+                    emissiveColorAttr.color.b);
+            } else {
+                program.setUniformf("u_emissiveColor", 1.0f, 1.0f, 1.0f);
+            }
+        } else {
+            // No emissive
+            program.setUniformf("u_hasEmissiveMap", 0.0f);
+            program.setUniformf("u_emissiveColor", 0.0f, 0.0f, 0.0f);
+            // Still bind a texture to prevent shader errors (use diffuse)
+            if (diffuseAttr != null && diffuseAttr.textureDescription.texture != null) {
+                final int unit = context.textureBinder.bind(diffuseAttr.textureDescription.texture);
+                program.setUniformi("u_emissiveTexture", unit);
             }
         }
 
