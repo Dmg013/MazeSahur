@@ -48,6 +48,9 @@ public class GameScreen extends ScalableGameScreen {
     private static final float MOUSE_SENSITIVITY = 0.2f;
     private static final float MAX_PITCH = 89f;
 
+    // Initialization flag to prevent double-loading
+    private boolean initialized = false;
+
     /**
      * Creates a new game screen with default settings.
      */
@@ -70,6 +73,17 @@ public class GameScreen extends ScalableGameScreen {
 
     @Override
     public void show() {
+        // Prevent double-initialization (happens when switching from splash)
+        if (initialized) {
+            System.out.println("[GameScreen] Already initialized, skipping show()");
+            // Just recapture cursor
+            Gdx.input.setCursorCatched(true);
+            return;
+        }
+
+        System.out.println("[GameScreen] Initializing for the first time...");
+        initialized = true;
+
         // Initialize camera (must be done after OpenGL context is ready)
         final int screenWidth = Gdx.graphics.getBackBufferWidth();
         final int screenHeight = Gdx.graphics.getBackBufferHeight();
@@ -100,6 +114,8 @@ public class GameScreen extends ScalableGameScreen {
 
         // Initialize enemy position
         enemy.initialize();
+
+        System.out.println("[GameScreen] Initialization complete!");
     }
 
     @Override

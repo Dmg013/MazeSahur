@@ -154,12 +154,19 @@ public class SpotlightShader implements Shader {
             program.setUniformf("u_spotIntensity", 0f);
         }
 
-        // Set point light parameters
+        // Set point light parameters (only if lights exist)
         program.setUniformi("u_numPointLights", numPointLights);
-        for (int i = 0; i < numPointLights; i++) {
-            program.setUniformf("u_pointLightPositions[" + i + "]", pointLightPositions[i]);
-            program.setUniformf("u_pointLightColors[" + i + "]", pointLightColors[i]);
-            program.setUniformf("u_pointLightIntensities[" + i + "]", pointLightIntensities[i]);
+        if (numPointLights > 0) {
+            for (int i = 0; i < numPointLights; i++) {
+                try {
+                    program.setUniformf("u_pointLightPositions[" + i + "]", pointLightPositions[i]);
+                    program.setUniformf("u_pointLightColors[" + i + "]", pointLightColors[i]);
+                    program.setUniformf("u_pointLightIntensities[" + i + "]", pointLightIntensities[i]);
+                } catch (IllegalArgumentException e) {
+                    // Uniform doesn't exist in shader (likely optimized out), skip
+                    break;
+                }
+            }
         }
 
         // Set maze data for shadow casting

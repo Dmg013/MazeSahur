@@ -1,6 +1,7 @@
 package nl.saxion.game;
 
 import nl.saxion.game.mazesahur.screen.GameScreen;
+import nl.saxion.game.mazesahur.screen.SplashScreen;
 import nl.saxion.gameapp.GameApp;
 
 /**
@@ -25,10 +26,12 @@ public final class Main {
      * @param args Command line arguments (not used)
      */
     public static void main(String[] args) {
-        // Add game screen
-        GameApp.addScreen("MazeGame", new GameScreen());
+        // Add splash screen
+        GameApp.addScreen("Splash", new SplashScreen());
 
-        // Start game loop with configuration
-        GameApp.start("MazeSahur - Horror Maze Game", 1280, 720, 60, false, "MazeGame");
+        // GameScreen will be loaded asynchronously by SplashScreen
+
+        // Start with splash screen (900x500 for splash, will resize for game)
+        GameApp.start("MazeSahur", 900, 500, 60, false, "Splash");
     }
 }
