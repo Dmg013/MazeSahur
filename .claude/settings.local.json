@@ -4,7 +4,10 @@
       "Bash(git add:*)",
       "Bash(./gradlew build:*)",
       "Bash(java:*)",
-      "Bash(./gradlew:*)"
+      "Bash(./gradlew:*)",
+      "Bash(dir:*)",
+      "Bash(.gradlew.bat jar --dry-run)",
+      "Bash(./gradlew.bat jar:*)"
     ],
     "deny": [],
     "ask": []
