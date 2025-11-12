@@ -1,0 +1,110 @@
+name: Build and Release Game
+
+on:
+  push:
+    tags:
+      - 'v*'  # Triggers on version tags like v1.0.0, v1.1.0, etc.
+  workflow_dispatch:  # Allows manual trigger from GitHub UI
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up JDK 21
+        uses: actions/setup-java@v4
+        with:
+          distribution: 'microsoft'
+          java-version: '21'
+          cache: 'gradle'
+
+      - name: Grant execute permission for gradlew
+        run: chmod +x gradlew
+
+      - name: Build with Gradle
+        run: ./gradlew desktop:dist
+
+      - name: Create release package
+        run: |
+          mkdir -p release/MazeSahur
+
+          # Copy JAR
+          cp desktop/build/libs/*.jar release/MazeSahur/MazeSahur.jar
+
+          # Create run scripts
+          echo '#!/bin/bash' > release/MazeSahur/run.sh
+          echo 'java -jar MazeSahur.jar' >> release/MazeSahur/run.sh
+          chmod +x release/MazeSahur/run.sh
+
+          echo '@echo off' > release/MazeSahur/run.bat
+          echo 'java -jar MazeSahur.jar' >> release/MazeSahur/run.bat
+
+          # Create README
+          cat > release/MazeSahur/README.txt << 'EOF'
+          MazeSahur - Horror Maze Game
+          ============================
+
+          Requirements:
+          - Java 21 or higher
+
+          How to Run:
+          - Windows: Double-click run.bat
+          - Linux/Mac: Run ./run.sh or: java -jar MazeSahur.jar
+
+          Controls:
+          - WASD: Move
+          - Mouse: Look around
+          - F: Toggle flashlight
+          - ESC: Exit game
+
+          Developed by: Olivier, Luuk, Russell, Tim
+          EOF
+
+          # Create ZIP
+          cd release
+          zip -r MazeSahur-$(echo $GITHUB_REF | sed 's/refs\/tags\///').zip MazeSahur/
+          cd ..
+
+      - name: Upload build artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: MazeSahur-Build
+          path: release/*.zip
+
+      - name: Create GitHub Release
+        if: startsWith(github.ref, 'refs/tags/')
+        uses: softprops/action-gh-release@v1
+        with:
+          files: release/*.zip
+          draft: false
+          prerelease: false
+          generate_release_notes: true
+          body: |
+            ## MazeSahur - Horror Maze Game
+
+            A first-person 3D horror maze game with realistic lighting and AI enemy.
+
+            ### Features:
+            - 🎮 First-person 3D maze exploration
+            - 💡 Realistic PBR lighting with dynamic shadows
+            - 🔦 Flashlight with cone-based spotlight
+            - 🏮 Atmospheric ceiling lamps with subtle flickering
+            - 👾 Smart AI enemy with pathfinding
+            - 🌫️ Horror atmosphere with fog effects
+            - 🖥️ Optimized for low-end hardware
+
+            ### Requirements:
+            - Java 21 or higher
+            - Windows, Linux, or macOS
+
+            ### How to Run:
+            1. Download and extract the ZIP file
+            2. Windows: Run `run.bat`
+            3. Linux/Mac: Run `./run.sh` or `java -jar MazeSahur.jar`
+
+            Enjoy the game! 🎮👻
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

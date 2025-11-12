@@ -75,8 +75,18 @@ public class GameScreen extends ScalableGameScreen {
     public void show() {
         // Prevent double-initialization (happens when switching from splash)
         if (initialized) {
-            System.out.println("[GameScreen] Already initialized, skipping show()");
-            // Just recapture cursor
+            System.out.println("[GameScreen] Already initialized, updating viewport...");
+
+            // Update camera viewport for new window size (900x500 -> 1280x720)
+            final int screenWidth = Gdx.graphics.getBackBufferWidth();
+            final int screenHeight = Gdx.graphics.getBackBufferHeight();
+            if (camera != null) {
+                camera.viewportWidth = screenWidth;
+                camera.viewportHeight = screenHeight;
+                camera.update();
+            }
+
+            // Recapture cursor
             Gdx.input.setCursorCatched(true);
             return;
         }
