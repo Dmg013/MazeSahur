@@ -317,8 +317,8 @@
             continue;
         }
 
-        // Distance attenuation (quadratic falloff)
-        float attenuation = 1.0 / (1.0 + 0.08 * distance + 0.015 * distance * distance);
+        // Distance attenuation (strong quadratic falloff - lamps don't reach far)
+        float attenuation = 1.0 / (1.0 + 0.25 * distance + 0.05 * distance * distance);
 
         // Diffuse lighting
         float diff = max(dot(normal, lightDir), 0.0);
@@ -338,8 +338,8 @@
     if (u_hasEmissiveMap > 0.5) {
         // Sample emissive texture
         vec3 emissiveMap = texture2D(u_emissiveTexture, texCoords).rgb;
-        // Apply emissive color and make it bright
-        emissiveGlow = emissiveMap * u_emissiveColor * 3.0; // Boost brightness
+        // Apply emissive color and make it very bright (visible even with flashlight)
+        emissiveGlow = emissiveMap * u_emissiveColor * 8.0; // Strong boost for visibility
     }
 
     // Combine all lighting + emissive (emissive is NOT affected by lighting/shadows)

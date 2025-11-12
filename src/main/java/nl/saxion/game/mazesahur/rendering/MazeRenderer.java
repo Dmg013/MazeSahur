@@ -43,6 +43,7 @@ public class MazeRenderer {
     private ModelInstance enemyInstance;
     private List<ModelInstance> ceilingLampInstances;
     private List<Vector3> lampLightPositions;
+    private List<Boolean> lampIsBroken; // Track which lamps are completely broken
 
     // Lamp flickering
     private float[] lampFlickerTimers;
@@ -64,6 +65,7 @@ public class MazeRenderer {
         this.wallInstances = new ArrayList<>();
         this.ceilingLampInstances = new ArrayList<>();
         this.lampLightPositions = new ArrayList<>();
+        this.lampIsBroken = new ArrayList<>();
     }
 
     /**
@@ -217,75 +219,91 @@ public class MazeRenderer {
             com.badlogic.gdx.graphics.Texture.TextureFilter.Linear
         );
 
-        // Place lamps at regular intervals throughout the maze corridors
-        final int lampSpacing = 7; // Place a lamp every 7 cells - more spread out
+        // Place lamps randomly throughout the maze corridors
         final float ceilingHeight = GameConfig.WALL_HEIGHT; // Place at ceiling height
-        final float lampScale = 0.05f; // Scale down the lamp model (much smaller)
+        final float lampScale = 0.025f; // Scale down the lamp model (very small)
+        final float lampPlacementChance = 0.25f; // 25% chance per corridor cell
+        final float minLampDistance = GameConfig.CELL_SIZE * 4.0f; // Minimum 4 cells apart
+        final float brokenLampChance = 0.25f; // 25% of lamps are completely broken (no light)
 
+        final java.util.Random random = new java.util.Random();
         int lampsPlaced = 0;
-        int corridorsChecked = 0;
+        int brokenLamps = 0;
 
-        // Place lamps in a grid pattern throughout corridors
-        // Try multiple starting offsets to ensure we find corridors
-        for (int startZ = 0; startZ <= 2; startZ++) {
-            for (int startX = 0; startX <= 2; startX++) {
-                for (int z = startZ; z < maze.getHeight(); z += lampSpacing) {
-                    for (int x = startX; x < maze.getWidth(); x += lampSpacing) {
-                        corridorsChecked++;
-                        // Only place lamps in open areas (corridors, not walls)
-                        if (!maze.isWall(x, z)) {
-                            // Check if we already placed a lamp very close to this position
-                            boolean tooClose = false;
-                            for (Vector3 existingLamp : lampLightPositions) {
-                                float dx = existingLamp.x - (x * GameConfig.CELL_SIZE + GameConfig.CELL_SIZE / 2f);
-                                float dz = existingLamp.z - (z * GameConfig.CELL_SIZE + GameConfig.CELL_SIZE / 2f);
-                                float distSq = dx * dx + dz * dz;
-                                if (distSq < GameConfig.CELL_SIZE * GameConfig.CELL_SIZE * 4) { // Closer than 4 cells
-                                    tooClose = true;
-                                    break;
-                                }
+        // Iterate through all corridor cells randomly
+        for (int z = 0; z < maze.getHeight(); z++) {
+            for (int x = 0; x < maze.getWidth(); x++) {
+                // Only place lamps in open areas (corridors, not walls)
+                if (!maze.isWall(x, z)) {
+                    // Random chance to place a lamp
+                    if (random.nextFloat() < lampPlacementChance) {
+                        // Check if we already placed a lamp very close to this position
+                        boolean tooClose = false;
+                        final float xPos = x * GameConfig.CELL_SIZE + GameConfig.CELL_SIZE / 2f;
+                        final float zPos = z * GameConfig.CELL_SIZE + GameConfig.CELL_SIZE / 2f;
+
+                        for (Vector3 existingLamp : lampLightPositions) {
+                            float dx = existingLamp.x - xPos;
+                            float dz = existingLamp.z - zPos;
+                            float distSq = dx * dx + dz * dz;
+                            if (distSq < minLampDistance * minLampDistance) {
+                                tooClose = true;
+                                break;
                             }
+                        }
 
-                            if (!tooClose) {
-                                final ModelInstance lampInstance = new ModelInstance(ceilingLampModel);
+                        if (!tooClose) {
+                            final ModelInstance lampInstance = new ModelInstance(ceilingLampModel);
 
-                                // Position lamp at ceiling, centered in cell
-                                final float xPos = x * GameConfig.CELL_SIZE + GameConfig.CELL_SIZE / 2f;
-                                final float yPos = ceilingHeight - 0.2f; // Slightly below ceiling
-                                final float zPos = z * GameConfig.CELL_SIZE + GameConfig.CELL_SIZE / 2f;
+                            // Position lamp at ceiling, centered in cell
+                            final float yPos = ceilingHeight * 0.7f; // Hanging down but high enough to walk under
 
-                                lampInstance.transform.setToTranslation(xPos, yPos, zPos);
-                                lampInstance.transform.scale(lampScale, lampScale, lampScale);
+                            lampInstance.transform.setToTranslation(xPos, yPos, zPos);
+                            lampInstance.transform.scale(lampScale, lampScale, lampScale);
 
-                                // Apply textures to lamp materials with subtle yellow glow
-                                for (final com.badlogic.gdx.graphics.g3d.Material mat : lampInstance.materials) {
-                                    mat.clear();
-                                    // Add diffuse texture
-                                    mat.set(com.badlogic.gdx.graphics.g3d.attributes.TextureAttribute.createDiffuse(lampTexture));
-                                    // Add emissive texture for glowing effect
-                                    mat.set(com.badlogic.gdx.graphics.g3d.attributes.TextureAttribute.createEmissive(lampEmissive));
-                                    // Add subtle yellow emissive color for glowing bulb
+                            // Determine if this lamp is completely broken
+                            final boolean isBroken = random.nextFloat() < brokenLampChance;
+
+                            // Apply textures to lamp materials
+                            for (final com.badlogic.gdx.graphics.g3d.Material mat : lampInstance.materials) {
+                                mat.clear();
+                                // Add diffuse texture
+                                mat.set(com.badlogic.gdx.graphics.g3d.attributes.TextureAttribute.createDiffuse(lampTexture));
+                                // Add emissive texture for glowing effect
+                                mat.set(com.badlogic.gdx.graphics.g3d.attributes.TextureAttribute.createEmissive(lampEmissive));
+
+                                if (isBroken) {
+                                    // Broken lamp - no glow, darker appearance
                                     mat.set(com.badlogic.gdx.graphics.g3d.attributes.ColorAttribute.createEmissive(
-                                        0.8f, 0.7f, 0.4f, 1.0f // Subtle warm glow
+                                        0.0f, 0.0f, 0.0f, 1.0f // No glow
                                     ));
-                                    // Add yellow diffuse tint
+                                    mat.set(com.badlogic.gdx.graphics.g3d.attributes.ColorAttribute.createDiffuse(
+                                        0.3f, 0.3f, 0.3f, 1.0f // Dark/dead lamp
+                                    ));
+                                    brokenLamps++;
+                                } else {
+                                    // Working lamp - bright yellow glow
+                                    mat.set(com.badlogic.gdx.graphics.g3d.attributes.ColorAttribute.createEmissive(
+                                        2.0f, 1.8f, 1.2f, 1.0f // Bright warm glow (visible with flashlight)
+                                    ));
                                     mat.set(com.badlogic.gdx.graphics.g3d.attributes.ColorAttribute.createDiffuse(
                                         1.0f, 0.95f, 0.6f, 1.0f // Yellow tint
                                     ));
                                 }
-
-                                ceilingLampInstances.add(lampInstance);
-                                // Store light position at the lamp bulb (higher up for better cone)
-                                lampLightPositions.add(new Vector3(xPos, yPos + 0.3f, zPos));
-                                lampsPlaced++;
                             }
+
+                            ceilingLampInstances.add(lampInstance);
+                            // Store light position at the lamp bulb (at hanging height)
+                            lampLightPositions.add(new Vector3(xPos, yPos + 0.3f, zPos));
+                            lampIsBroken.add(isBroken);
+                            lampsPlaced++;
                         }
                     }
                 }
             }
         }
 
-        System.out.println("[MazeRenderer] Loaded " + ceilingLampInstances.size() + " ceiling lamps (balanced for performance and coverage)");
+        System.out.println("[MazeRenderer] Loaded " + ceilingLampInstances.size() + " ceiling lamps (" + brokenLamps + " broken, " + (lampsPlaced - brokenLamps) + " working)");
 
         // Pass lamp positions to shader for lighting
         setupLampLights();
@@ -356,9 +374,17 @@ public class MazeRenderer {
         for (int i = 0; i < numLights; i++) {
             positions[i] = lampLightPositions.get(i);
             colors[i] = new Vector3(1.0f, 0.85f, 0.5f); // Warm yellow lamp light
-            intensities[i] = 0.8f; // Subtle base intensity
+
+            // Broken lamps don't emit light
+            if (lampIsBroken.get(i)) {
+                intensities[i] = 0.0f; // No light
+                lampFlickerIntensities[i] = 0.0f;
+            } else {
+                intensities[i] = 0.8f; // Subtle base intensity
+                lampFlickerIntensities[i] = 0.8f;
+            }
+
             lampFlickerTimers[i] = (float) (Math.random() * 10.0); // Random start times
-            lampFlickerIntensities[i] = 0.8f;
         }
 
         lightingManager.getShader().setPointLights(positions, colors, intensities, numLights);
@@ -366,7 +392,7 @@ public class MazeRenderer {
     }
 
     /**
-     * Updates lamp flickering effects with smooth, subtle variations.
+     * Updates lamp flickering effects with dramatic, broken light variations.
      * Optimized to update less frequently for better performance.
      *
      * @param delta Time since last frame
@@ -374,9 +400,9 @@ public class MazeRenderer {
     public void updateLampFlicker(final float delta) {
         if (lampFlickerTimers == null) return;
 
-        // Only update every 8 frames for MUCH better performance on potato PCs
+        // Only update every 4 frames for responsive broken lamp effect
         flickerUpdateCounter++;
-        if (flickerUpdateCounter < 8) {
+        if (flickerUpdateCounter < 4) {
             return;
         }
         flickerUpdateCounter = 0;
@@ -387,33 +413,61 @@ public class MazeRenderer {
         final float[] intensities = new float[numLights];
 
         for (int i = 0; i < numLights; i++) {
-            lampFlickerTimers[i] += delta * 8; // Compensate for skipped frames
-
-            // Subtle, realistic flicker - smooth sine wave variations
-            // Each lamp has slightly different flicker pattern
-            final float flickerSpeed = 0.8f + (i % 5) * 0.15f; // Very slow, gentle flickering
-            final float randomOffset = (float) Math.sin(i * 3.14159f) * 100.0f;
-
-            // Create smooth flicker pattern using sine wave
-            float flicker = (float) Math.sin((lampFlickerTimers[i] + randomOffset) * flickerSpeed);
-
-            // Add subtle secondary variation for more natural effect
-            float variation = (float) Math.sin(lampFlickerTimers[i] * 0.5f + i) * 0.15f;
-
-            // Combine for subtle, smooth flickering (range: -1.15 to 1.15)
-            flicker += variation;
-
-            // Map to intensity range: 0.3 to 1.2 (subtle variations, never fully off)
-            float intensity = 0.75f + flicker * 0.225f;
-
-            // Clamp to safe range
-            intensity = Math.max(0.3f, Math.min(1.2f, intensity));
-
-            lampFlickerIntensities[i] = intensity;
-
             positions[i] = lampLightPositions.get(i);
             colors[i] = new Vector3(1.0f, 0.85f, 0.5f); // Warm yellow
-            intensities[i] = intensity;
+
+            // Check if this lamp is completely broken
+            if (lampIsBroken.get(i)) {
+                // Broken lamps stay off (no light)
+                intensities[i] = 0.0f;
+                lampFlickerIntensities[i] = 0.0f;
+            } else {
+                // Working lamps flicker dramatically
+                lampFlickerTimers[i] += delta * 4; // Compensate for skipped frames
+
+                // Dramatic, broken lamp flicker - erratic variations
+                // Each lamp has different flicker pattern (some more broken than others)
+                final float brokenLevel = (i % 7) / 7.0f; // How broken this lamp is (0-1)
+                final float flickerSpeed = 3.0f + (i % 5) * 1.5f; // Fast, erratic flickering
+                final float randomOffset = (float) Math.sin(i * 3.14159f) * 100.0f;
+
+                // Create erratic flicker pattern using multiple sine waves
+                float flicker = (float) Math.sin((lampFlickerTimers[i] + randomOffset) * flickerSpeed);
+
+                // Add rapid secondary variation for broken effect
+                float variation = (float) Math.sin(lampFlickerTimers[i] * 8.0f + i) * 0.5f;
+
+                // Add random spikes for electrical short effect
+                float spike = (float) Math.sin(lampFlickerTimers[i] * 25.0f + i * 7.0f);
+                if (spike > 0.85f) {
+                    spike = 1.0f; // Sharp on/off spikes
+                } else {
+                    spike = 0.0f;
+                }
+
+                // Combine for dramatic, erratic flickering
+                flicker = flicker * 0.6f + variation * 0.3f + spike * 0.3f;
+
+                // Map to intensity range based on how broken the lamp is
+                // More broken lamps go darker (0.0 to 0.8) vs less broken (0.4 to 1.2)
+                float baseIntensity = 0.6f - brokenLevel * 0.3f;
+                float flickerRange = 0.5f + brokenLevel * 0.4f;
+                float intensity = baseIntensity + flicker * flickerRange;
+
+                // Some lamps occasionally go completely dark (electrical failure)
+                if (brokenLevel > 0.6f) {
+                    float darkChance = (float) Math.sin(lampFlickerTimers[i] * 0.7f + i * 3.0f);
+                    if (darkChance > 0.9f) {
+                        intensity = 0.0f; // Complete failure
+                    }
+                }
+
+                // Clamp to safe range (allow complete darkness for broken effect)
+                intensity = Math.max(0.0f, Math.min(1.2f, intensity));
+
+                lampFlickerIntensities[i] = intensity;
+                intensities[i] = intensity;
+            }
         }
 
         lightingManager.getShader().setPointLights(positions, colors, intensities, numLights);

@@ -37,10 +37,10 @@ public class SpotlightShader implements Shader {
     private float spotAttenuation = 0.015f;
     private boolean enabled = true;
 
-    // Ambient and moonlight
-    private final Vector3 ambientLight = new Vector3(0.01f, 0.01f, 0.012f);
+    // Ambient and moonlight (very dark for horror atmosphere, slight visibility)
+    private final Vector3 ambientLight = new Vector3(0.0005f, 0.0005f, 0.0007f);
     private final Vector3 moonDirection = new Vector3(-0.2f, -1f, -0.3f);
-    private final Vector3 moonColor = new Vector3(0.03f, 0.035f, 0.05f);
+    private final Vector3 moonColor = new Vector3(0.002f, 0.0025f, 0.003f);
 
     // Fog parameters for horror atmosphere
     private final Vector3 fogColor = new Vector3(0.0f, 0.0f, 0.0f); // Pure black fog
