@@ -8,7 +8,14 @@
       "Bash(dir:*)",
       "Bash(.gradlew.bat jar --dry-run)",
       "Bash(./gradlew.bat jar:*)",
-      "Bash(timeout 10 bash:*)"
+      "Bash(timeout 10 bash:*)",
+      "Bash(.gradlew.bat build)",
+      "Bash(gradlew.bat build:*)",
+      "Bash(./gradlew.bat build:*)",
+      "Bash(/c/Users/Olivier/Documents/GitHub/MazeSahur/src/main/resources/fbx-conv.exe -f ElevatorAnimation.fbx)",
+      "Bash(for:*)",
+      "Bash(do cp \"$f\" \"$f%.jpeg.jpg\")",
+      "Bash(done)"
     ],
     "deny": [],
     "ask": []

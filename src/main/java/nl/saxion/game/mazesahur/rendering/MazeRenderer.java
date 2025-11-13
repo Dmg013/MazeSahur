@@ -8,10 +8,14 @@ import com.badlogic.gdx.graphics.g3d.Model;
 import com.badlogic.gdx.graphics.g3d.ModelBatch;
 import com.badlogic.gdx.graphics.g3d.ModelInstance;
 import com.badlogic.gdx.graphics.g3d.loader.ObjLoader;
+import com.badlogic.gdx.graphics.g3d.loader.G3dModelLoader;
 import com.badlogic.gdx.graphics.g3d.utils.ModelBuilder;
+import com.badlogic.gdx.graphics.g3d.utils.AnimationController;
 import com.badlogic.gdx.math.Vector3;
+import com.badlogic.gdx.utils.JsonReader;
 import nl.saxion.game.mazesahur.config.GameConfig;
 import nl.saxion.game.mazesahur.entity.Enemy;
+import nl.saxion.game.mazesahur.entity.Elevator;
 import nl.saxion.game.mazesahur.world.Maze;
 
 import java.util.ArrayList;
@@ -36,6 +40,7 @@ public class MazeRenderer {
     private Model roofModel;
     private Model enemyModel;
     private Model ceilingLampModel;
+    private Model elevatorModel;
 
     private ModelInstance floorInstance;
     private ModelInstance roofInstance;
@@ -44,6 +49,8 @@ public class MazeRenderer {
     private List<ModelInstance> ceilingLampInstances;
     private List<Vector3> lampLightPositions;
     private List<Boolean> lampIsBroken; // Track which lamps are completely broken
+    private ModelInstance elevatorInstance;
+    private AnimationController elevatorAnimController;
 
     // Lamp flickering
     private float[] lampFlickerTimers;
@@ -85,6 +92,9 @@ public class MazeRenderer {
 
         // Load ceiling lamp models
         loadCeilingLamps();
+
+        // Load elevator model
+        loadElevatorModel();
     }
 
     /**
@@ -183,6 +193,65 @@ public class MazeRenderer {
         for (final com.badlogic.gdx.graphics.g3d.Material mat : enemyInstance.materials) {
             mat.clear();
             mat.set(enemyMaterial);
+        }
+    }
+
+    /**
+     * Loads the elevator 3D model with animations from converted G3DB file.
+     */
+    private void loadElevatorModel() {
+        try {
+            System.out.println("[MazeRenderer] Loading elevator G3DB model...");
+
+            // Load G3DB model (binary format from fbx-conv)
+            // Use UBJsonReader for binary G3DB format
+            final com.badlogic.gdx.utils.UBJsonReader ubJsonReader = new com.badlogic.gdx.utils.UBJsonReader();
+            final G3dModelLoader g3dLoader = new G3dModelLoader(ubJsonReader);
+
+            // Load model - textures should be in same directory as g3db file
+            elevatorModel = g3dLoader.loadModel(
+                Gdx.files.internal("models/elevator/source/ElevatorAnimation.g3db")
+            );
+
+            elevatorInstance = new ModelInstance(elevatorModel);
+
+            // Make all materials emissive so they glow in the dark
+            for (final com.badlogic.gdx.graphics.g3d.Material mat : elevatorInstance.materials) {
+                // Add bright emissive glow to all materials
+                mat.set(com.badlogic.gdx.graphics.g3d.attributes.ColorAttribute.createEmissive(
+                    1.0f, 0.9f, 0.7f, 1.0f  // Warm white glow
+                ));
+                // Make materials respond to light better
+                mat.set(com.badlogic.gdx.graphics.g3d.attributes.ColorAttribute.createDiffuse(
+                    1.0f, 1.0f, 1.0f, 1.0f  // Full white diffuse
+                ));
+            }
+
+            // Initialize animation controller if model has animations
+            if (elevatorModel.animations.size > 0) {
+                elevatorAnimController = new AnimationController(elevatorInstance);
+                System.out.println("[MazeRenderer] Elevator has " + elevatorModel.animations.size + " animations:");
+                for (int i = 0; i < elevatorModel.animations.size; i++) {
+                    System.out.println("  - " + elevatorModel.animations.get(i).id);
+                }
+            } else {
+                System.out.println("[MazeRenderer] Elevator model has no animations");
+            }
+
+            System.out.println("[MazeRenderer] Loaded elevator G3DB model with " + elevatorInstance.materials.size + " materials");
+
+        } catch (Exception e) {
+            System.err.println("[MazeRenderer] CRITICAL ERROR loading elevator G3DB: " + e.getMessage());
+            e.printStackTrace();
+
+            // Create visible fallback
+            System.out.println("[MazeRenderer] Creating fallback box...");
+            final ModelBuilder modelBuilder = new ModelBuilder();
+            final Material elevatorMaterial = new Material();
+            elevatorMaterial.set(com.badlogic.gdx.graphics.g3d.attributes.ColorAttribute.createDiffuse(1.0f, 0.0f, 0.0f, 1.0f));
+            elevatorMaterial.set(com.badlogic.gdx.graphics.g3d.attributes.ColorAttribute.createEmissive(2.0f, 0.0f, 0.0f, 1.0f));
+            elevatorModel = modelBuilder.createBox(3f, 4f, 3f, elevatorMaterial, VertexAttributes.Usage.Position | VertexAttributes.Usage.Normal);
+            elevatorInstance = new ModelInstance(elevatorModel);
         }
     }
 
@@ -514,6 +583,52 @@ public class MazeRenderer {
     }
 
     /**
+     * Renders the elevator entity with door animation.
+     *
+     * @param camera The game camera
+     * @param elevator The elevator entity
+     */
+    public void renderElevator(final PerspectiveCamera camera, final Elevator elevator) {
+        if (elevatorInstance == null) return;
+
+        // Update animations if controller exists
+        if (elevatorAnimController != null) {
+            // Update animation based on door open percentage
+            final float doorOpenPercentage = elevator.getDoorOpenPercentage();
+
+            // If model has animations, play them based on state
+            if (elevatorModel.animations.size > 0) {
+                // Set animation time based on door percentage (0-100% of animation)
+                final String animId = elevatorModel.animations.get(0).id;
+                final float animDuration = elevatorModel.animations.get(0).duration;
+
+                // Manually set animation time instead of playing
+                elevatorAnimController.setAnimation(animId, -1); // -1 = loop
+                elevatorAnimController.update(doorOpenPercentage * animDuration);
+            }
+        }
+
+        // Update elevator transform
+        elevatorInstance.transform.idt(); // Reset transform
+
+        // Position elevator on the ground
+        final Vector3 elevatorPos = elevator.getPosition().cpy();
+        elevatorPos.y = 0f; // Floor level
+        elevatorInstance.transform.translate(elevatorPos);
+
+        // Scale elevator - FBX models are HUGE, scale down a lot
+        final float elevatorScale = 0.05f; // Much smaller!
+        elevatorInstance.transform.scale(elevatorScale, elevatorScale, elevatorScale);
+
+        // Render elevator with ESP (no depth test) like enemy so it's always visible
+        Gdx.gl.glDisable(com.badlogic.gdx.graphics.GL20.GL_DEPTH_TEST);
+        modelBatch.begin(camera);
+        modelBatch.render(elevatorInstance);
+        modelBatch.end();
+        Gdx.gl.glEnable(com.badlogic.gdx.graphics.GL20.GL_DEPTH_TEST);
+    }
+
+    /**
      * Disposes rendering resources.
      */
     public void dispose() {
@@ -523,6 +638,7 @@ public class MazeRenderer {
         if (roofModel != null) roofModel.dispose();
         if (enemyModel != null) enemyModel.dispose();
         if (ceilingLampModel != null) ceilingLampModel.dispose();
+        if (elevatorModel != null) elevatorModel.dispose();
     }
 }
 

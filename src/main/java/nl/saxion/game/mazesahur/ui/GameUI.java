@@ -3,6 +3,7 @@ package nl.saxion.game.mazesahur.ui;
 import nl.saxion.game.mazesahur.config.GameConfig;
 import nl.saxion.game.mazesahur.entity.Enemy;
 import nl.saxion.game.mazesahur.entity.Player;
+import nl.saxion.game.mazesahur.entity.Elevator;
 import nl.saxion.game.mazesahur.rendering.LightingManager;
 import nl.saxion.game.mazesahur.screen.GameScreen;
 import nl.saxion.gameapp.GameApp;
@@ -34,10 +35,11 @@ public class GameUI {
      * @param gameScreen Reference to the game screen
      * @param player The player entity
      * @param enemy The enemy entity
+     * @param elevator The elevator entity
      * @param lightingManager The lighting manager
      */
     public void render(final GameScreen gameScreen, final Player player,
-                       final Enemy enemy, final LightingManager lightingManager) {
+                       final Enemy enemy, final Elevator elevator, final LightingManager lightingManager) {
         // Reset OpenGL state for 2D rendering
         com.badlogic.gdx.Gdx.gl.glDisable(com.badlogic.gdx.graphics.GL20.GL_DEPTH_TEST);
         com.badlogic.gdx.Gdx.gl.glEnable(com.badlogic.gdx.graphics.GL20.GL_BLEND);
@@ -79,6 +81,22 @@ public class GameUI {
             GameApp.drawText(FONT_NAME, "Pursuit time: " + timeRemaining + "s",
                 20, 170, "red-500");
         }
+
+        // Elevator info (distance tracker like Sahur)
+        final float elevatorDistance = elevator.getDistanceToPlayer(player.getPosition());
+        GameApp.drawText(FONT_NAME, "Elevator distance: " + (int)elevatorDistance + "m",
+            20, 200, "blue-500");
+
+        // Elevator state
+        String elevatorStateText = "Elevator: " + elevator.getCurrentState();
+        String elevatorStateColor = "gray-500";
+        if (elevator.getCurrentState() == Elevator.ElevatorState.OPEN) {
+            elevatorStateColor = "green-500";
+        } else if (elevator.getCurrentState() == Elevator.ElevatorState.OPENING
+                   || elevator.getCurrentState() == Elevator.ElevatorState.CLOSING) {
+            elevatorStateColor = "amber-500";
+        }
+        GameApp.drawText(FONT_NAME, elevatorStateText, 20, 230, elevatorStateColor);
 
         // Exit hint (at bottom)
         GameApp.drawText(FONT_NAME, "ESC to exit", 20, screenHeight - 30, "amber-500");

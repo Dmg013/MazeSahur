@@ -8,6 +8,7 @@ import com.badlogic.gdx.math.Vector3;
 import nl.saxion.game.mazesahur.config.GameConfig;
 import nl.saxion.game.mazesahur.entity.Player;
 import nl.saxion.game.mazesahur.entity.Enemy;
+import nl.saxion.game.mazesahur.entity.Elevator;
 import nl.saxion.game.mazesahur.rendering.LightingManager;
 import nl.saxion.game.mazesahur.rendering.MaterialManager;
 import nl.saxion.game.mazesahur.rendering.MazeRenderer;
@@ -29,6 +30,7 @@ public class GameScreen extends ScalableGameScreen {
     private PerspectiveCamera camera;
     private final Player player;
     private final Enemy enemy;
+    private final Elevator elevator;
     private final Maze maze;
 
     // Rendering systems
@@ -72,6 +74,9 @@ public class GameScreen extends ScalableGameScreen {
         // Initialize entities
         player = new Player(new Vector3(12f, 3f, 12f));
         enemy = new Enemy(maze, player);
+
+        // Initialize elevator in a valid open position
+        elevator = createElevatorInOpenSpace();
 
         // Camera control initialization
         yaw = 0;
@@ -147,7 +152,8 @@ public class GameScreen extends ScalableGameScreen {
         // Check for death condition
         if (!isDead) {
             survivalTime += delta;
-            checkDeathCondition();
+            // TEMPORARY: Death disabled for testing
+            // checkDeathCondition();
         }
 
         // Skip normal game logic if dead
@@ -156,6 +162,7 @@ public class GameScreen extends ScalableGameScreen {
             handleInput(delta);
             player.update(delta, maze);
             enemy.update(delta);
+            elevator.update(delta, player.getPosition()); // Update elevator with player position
             updateCamera();
 
             // Update lighting
@@ -174,10 +181,11 @@ public class GameScreen extends ScalableGameScreen {
         // Render 3D scene
         mazeRenderer.render(camera);
         mazeRenderer.renderEnemy(camera, enemy);
+        mazeRenderer.renderElevator(camera, elevator);
 
         // Render UI (hide during jumpscare)
         if (!jumpscareActive) {
-            gameUI.render(this, player, enemy, lightingManager);
+            gameUI.render(this, player, enemy, elevator, lightingManager);
         }
     }
 
@@ -258,13 +266,49 @@ public class GameScreen extends ScalableGameScreen {
     }
 
     /**
-     * Checks collision with maze walls using circular collision detection.
+     * Creates an elevator in a guaranteed open space in the maze.
+     */
+    private Elevator createElevatorInOpenSpace() {
+        // Find a large open area for the elevator (needs 3x3 open cells)
+        for (int z = 2; z < maze.getHeight() - 2; z++) {
+            for (int x = 2; x < maze.getWidth() - 2; x++) {
+                // Check if this position and surrounding area is open
+                boolean isAreaOpen = true;
+                for (int dz = -1; dz <= 1; dz++) {
+                    for (int dx = -1; dx <= 1; dx++) {
+                        if (maze.isWall(x + dx, z + dz)) {
+                            isAreaOpen = false;
+                            break;
+                        }
+                    }
+                    if (!isAreaOpen) break;
+                }
+
+                // If we found a good spot, place elevator here
+                if (isAreaOpen) {
+                    final float elevatorX = x * Maze.CELL_SIZE + Maze.CELL_SIZE / 2f;
+                    final float elevatorZ = z * Maze.CELL_SIZE + Maze.CELL_SIZE / 2f;
+                    System.out.println("[GameScreen] Elevator spawned at grid (" + x + ", " + z + ")");
+                    return new Elevator(maze, elevatorX, elevatorZ);
+                }
+            }
+        }
+
+        // Fallback to center if no good spot found
+        final float fallbackX = (maze.getWidth() / 2) * Maze.CELL_SIZE + Maze.CELL_SIZE / 2f;
+        final float fallbackZ = (maze.getHeight() / 2) * Maze.CELL_SIZE + Maze.CELL_SIZE / 2f;
+        System.out.println("[GameScreen] Elevator spawned at center (fallback)");
+        return new Elevator(maze, fallbackX, fallbackZ);
+    }
+
+    /**
+     * Checks collision with maze walls and elevator using circular collision detection.
      */
     private boolean checkCollision(final Vector3 position) {
         final int gridX = (int) Math.floor(position.x / Maze.CELL_SIZE);
         final int gridZ = (int) Math.floor(position.z / Maze.CELL_SIZE);
 
-        // Check 3x3 grid around player
+        // Check 3x3 grid around player for walls
         for (int dz = -1; dz <= 1; dz++) {
             for (int dx = -1; dx <= 1; dx++) {
                 final int checkX = gridX + dx;
@@ -295,6 +339,11 @@ public class GameScreen extends ScalableGameScreen {
                     }
                 }
             }
+        }
+
+        // Check collision with elevator (only blocks if doors are closed)
+        if (elevator.blocksPosition(position)) {
+            return true;
         }
 
         return false;
