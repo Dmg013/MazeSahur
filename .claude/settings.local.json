@@ -15,7 +15,13 @@
       "Bash(/c/Users/Olivier/Documents/GitHub/MazeSahur/src/main/resources/fbx-conv.exe -f ElevatorAnimation.fbx)",
       "Bash(for:*)",
       "Bash(do cp \"$f\" \"$f%.jpeg.jpg\")",
-      "Bash(done)"
+      "Bash(done)",
+      "Bash(ls:*)",
+      "Bash(find:*)",
+      "mcp__ide__getDiagnostics",
+      "Bash(git restore:*)",
+      "Bash(mkdir:*)",
+      "Bash(cp:*)"
     ],
     "deny": [],
     "ask": []

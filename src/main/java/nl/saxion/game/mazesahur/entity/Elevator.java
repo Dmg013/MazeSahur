@@ -164,6 +164,42 @@ public class Elevator {
         return isInsideElevator(testPosition);
     }
 
+    /**
+     * Toggles the elevator doors between open and closed states.
+     * Used for manual player control.
+     */
+    public void toggleDoors() {
+        switch (currentState) {
+            case CLOSED:
+                // Start opening
+                currentState = ElevatorState.OPENING;
+                animationTimer = 0;
+                System.out.println("[Elevator] Manual open triggered");
+                break;
+
+            case OPENING:
+                // Reverse to closing
+                currentState = ElevatorState.CLOSING;
+                // Keep current animation progress but reverse direction
+                System.out.println("[Elevator] Manual close triggered (during opening)");
+                break;
+
+            case OPEN:
+                // Start closing
+                currentState = ElevatorState.CLOSING;
+                animationTimer = DOOR_ANIMATION_DURATION;
+                System.out.println("[Elevator] Manual close triggered");
+                break;
+
+            case CLOSING:
+                // Reverse to opening
+                currentState = ElevatorState.OPENING;
+                // Keep current animation progress but reverse direction
+                System.out.println("[Elevator] Manual open triggered (during closing)");
+                break;
+        }
+    }
+
     // Getters
     public Vector3 getPosition() {
         return position;

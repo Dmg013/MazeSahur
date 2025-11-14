@@ -97,5 +97,30 @@ public class Maze {
             gridZ * CELL_SIZE + CELL_SIZE / 2f
         };
     }
+
+    /**
+     * Creates an opening in the maze by removing walls in a rectangular area.
+     * Used for integrating the elevator into the maze walls.
+     *
+     * @param centerX Center X grid coordinate
+     * @param centerZ Center Z grid coordinate
+     * @param width Width in cells
+     * @param depth Depth in cells
+     */
+    public void createOpening(final int centerX, final int centerZ, final int width, final int depth) {
+        final int halfWidth = width / 2;
+        final int halfDepth = depth / 2;
+
+        for (int z = centerZ - halfDepth; z <= centerZ + halfDepth; z++) {
+            for (int x = centerX - halfWidth; x <= centerX + halfWidth; x++) {
+                if (x >= 0 && x < this.width && z >= 0 && z < this.height) {
+                    walls[z][x] = false; // Remove wall
+                }
+            }
+        }
+
+        System.out.println("[Maze] Created opening at grid (" + centerX + ", " + centerZ
+            + ") with size " + width + "x" + depth);
+    }
 }
 

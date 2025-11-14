@@ -8,11 +8,11 @@ import com.badlogic.gdx.graphics.g3d.Model;
 import com.badlogic.gdx.graphics.g3d.ModelBatch;
 import com.badlogic.gdx.graphics.g3d.ModelInstance;
 import com.badlogic.gdx.graphics.g3d.loader.ObjLoader;
-import com.badlogic.gdx.graphics.g3d.loader.G3dModelLoader;
 import com.badlogic.gdx.graphics.g3d.utils.ModelBuilder;
 import com.badlogic.gdx.graphics.g3d.utils.AnimationController;
 import com.badlogic.gdx.math.Vector3;
-import com.badlogic.gdx.utils.JsonReader;
+import net.mgsx.gltf.loaders.glb.GLBLoader;
+import net.mgsx.gltf.scene3d.scene.SceneAsset;
 import nl.saxion.game.mazesahur.config.GameConfig;
 import nl.saxion.game.mazesahur.entity.Enemy;
 import nl.saxion.game.mazesahur.entity.Elevator;
@@ -41,6 +41,10 @@ public class MazeRenderer {
     private Model enemyModel;
     private Model ceilingLampModel;
     private Model elevatorModel;
+    private com.badlogic.gdx.graphics.Texture whiteTexture; // 1x1 white texture for elevator (not used for floor)
+    private com.badlogic.gdx.graphics.Texture elevatorFloorTexture; // Floor platform texture (only for Mirror material)
+    private Model floorPlatformExtensionModel; // Small platform in front of elevator with maze floor texture
+    private ModelInstance floorPlatformExtensionInstance;
 
     private ModelInstance floorInstance;
     private ModelInstance roofInstance;
@@ -50,7 +54,7 @@ public class MazeRenderer {
     private List<Vector3> lampLightPositions;
     private List<Boolean> lampIsBroken; // Track which lamps are completely broken
     private ModelInstance elevatorInstance;
-    private AnimationController elevatorAnimController;
+    private AnimationController elevatorAnimationController;
 
     // Lamp flickering
     private float[] lampFlickerTimers;
@@ -193,65 +197,6 @@ public class MazeRenderer {
         for (final com.badlogic.gdx.graphics.g3d.Material mat : enemyInstance.materials) {
             mat.clear();
             mat.set(enemyMaterial);
-        }
-    }
-
-    /**
-     * Loads the elevator 3D model with animations from converted G3DB file.
-     */
-    private void loadElevatorModel() {
-        try {
-            System.out.println("[MazeRenderer] Loading elevator G3DB model...");
-
-            // Load G3DB model (binary format from fbx-conv)
-            // Use UBJsonReader for binary G3DB format
-            final com.badlogic.gdx.utils.UBJsonReader ubJsonReader = new com.badlogic.gdx.utils.UBJsonReader();
-            final G3dModelLoader g3dLoader = new G3dModelLoader(ubJsonReader);
-
-            // Load model - textures should be in same directory as g3db file
-            elevatorModel = g3dLoader.loadModel(
-                Gdx.files.internal("models/elevator/source/ElevatorAnimation.g3db")
-            );
-
-            elevatorInstance = new ModelInstance(elevatorModel);
-
-            // Make all materials emissive so they glow in the dark
-            for (final com.badlogic.gdx.graphics.g3d.Material mat : elevatorInstance.materials) {
-                // Add bright emissive glow to all materials
-                mat.set(com.badlogic.gdx.graphics.g3d.attributes.ColorAttribute.createEmissive(
-                    1.0f, 0.9f, 0.7f, 1.0f  // Warm white glow
-                ));
-                // Make materials respond to light better
-                mat.set(com.badlogic.gdx.graphics.g3d.attributes.ColorAttribute.createDiffuse(
-                    1.0f, 1.0f, 1.0f, 1.0f  // Full white diffuse
-                ));
-            }
-
-            // Initialize animation controller if model has animations
-            if (elevatorModel.animations.size > 0) {
-                elevatorAnimController = new AnimationController(elevatorInstance);
-                System.out.println("[MazeRenderer] Elevator has " + elevatorModel.animations.size + " animations:");
-                for (int i = 0; i < elevatorModel.animations.size; i++) {
-                    System.out.println("  - " + elevatorModel.animations.get(i).id);
-                }
-            } else {
-                System.out.println("[MazeRenderer] Elevator model has no animations");
-            }
-
-            System.out.println("[MazeRenderer] Loaded elevator G3DB model with " + elevatorInstance.materials.size + " materials");
-
-        } catch (Exception e) {
-            System.err.println("[MazeRenderer] CRITICAL ERROR loading elevator G3DB: " + e.getMessage());
-            e.printStackTrace();
-
-            // Create visible fallback
-            System.out.println("[MazeRenderer] Creating fallback box...");
-            final ModelBuilder modelBuilder = new ModelBuilder();
-            final Material elevatorMaterial = new Material();
-            elevatorMaterial.set(com.badlogic.gdx.graphics.g3d.attributes.ColorAttribute.createDiffuse(1.0f, 0.0f, 0.0f, 1.0f));
-            elevatorMaterial.set(com.badlogic.gdx.graphics.g3d.attributes.ColorAttribute.createEmissive(2.0f, 0.0f, 0.0f, 1.0f));
-            elevatorModel = modelBuilder.createBox(3f, 4f, 3f, elevatorMaterial, VertexAttributes.Usage.Position | VertexAttributes.Usage.Normal);
-            elevatorInstance = new ModelInstance(elevatorModel);
         }
     }
 
@@ -543,6 +488,180 @@ public class MazeRenderer {
     }
 
     /**
+     * Loads the animated elevator 3D model from GLB file.
+     */
+    private void loadElevatorModel() {
+        try {
+            System.out.println("[MazeRenderer] Loading elevator GLB model...");
+
+            // Create a 1x1 white texture to prevent texture bleeding from other objects
+            final com.badlogic.gdx.graphics.Pixmap pixmap = new com.badlogic.gdx.graphics.Pixmap(1, 1, com.badlogic.gdx.graphics.Pixmap.Format.RGBA8888);
+            pixmap.setColor(1.0f, 1.0f, 1.0f, 1.0f); // Pure white
+            pixmap.fill();
+            whiteTexture = new com.badlogic.gdx.graphics.Texture(pixmap);
+            whiteTexture.setFilter(
+                com.badlogic.gdx.graphics.Texture.TextureFilter.Nearest,
+                com.badlogic.gdx.graphics.Texture.TextureFilter.Nearest
+            );
+            pixmap.dispose();
+            System.out.println("[MazeRenderer] Created 1x1 white texture for elevator");
+
+            // Load elevator floor texture
+            elevatorFloorTexture = new com.badlogic.gdx.graphics.Texture(
+                Gdx.files.internal("models/elevator-animated/542c3de6590e7392990a57b3a76e2b4b_1.jpeg"),
+                true // Generate mipmaps
+            );
+            elevatorFloorTexture.setFilter(
+                com.badlogic.gdx.graphics.Texture.TextureFilter.MipMapLinearLinear,
+                com.badlogic.gdx.graphics.Texture.TextureFilter.Linear
+            );
+            elevatorFloorTexture.setWrap(
+                com.badlogic.gdx.graphics.Texture.TextureWrap.Repeat,
+                com.badlogic.gdx.graphics.Texture.TextureWrap.Repeat
+            );
+            System.out.println("[MazeRenderer] Loaded elevator floor texture");
+
+            // Load GLB file using gdx-gltf library
+            final SceneAsset sceneAsset = new GLBLoader().load(
+                Gdx.files.internal("models/elevator-animated/ElevatorAnimation.glb")
+            );
+
+            // Get the model from the scene
+            elevatorModel = sceneAsset.scene.model;
+            elevatorInstance = new ModelInstance(elevatorModel);
+
+            // Apply textures: floor platform gets elevator texture, everything else is white
+            System.out.println("[MazeRenderer] Applying textures to elevator materials...");
+            for (final com.badlogic.gdx.graphics.g3d.Material mat : elevatorInstance.materials) {
+                System.out.println("[MazeRenderer] Processing material: " + mat.id);
+                // AGGRESSIVE CLEAR: Clear all existing attributes (textures, colors, etc.)
+                mat.clear();
+
+                // EXTRA AGGRESSIVE: Remove ALL possible texture attributes to ensure no bleeding
+                mat.remove(com.badlogic.gdx.graphics.g3d.attributes.TextureAttribute.Diffuse);
+                mat.remove(com.badlogic.gdx.graphics.g3d.attributes.TextureAttribute.Normal);
+                mat.remove(com.badlogic.gdx.graphics.g3d.attributes.TextureAttribute.Bump);
+                mat.remove(com.badlogic.gdx.graphics.g3d.attributes.TextureAttribute.Specular);
+                mat.remove(com.badlogic.gdx.graphics.g3d.attributes.TextureAttribute.Emissive);
+                mat.remove(com.badlogic.gdx.graphics.g3d.attributes.TextureAttribute.Reflection);
+                mat.remove(com.badlogic.gdx.graphics.g3d.attributes.TextureAttribute.Ambient);
+
+                // Check if this is the floor platform material
+                if (mat.id != null && (mat.id.equalsIgnoreCase("Mirror") || mat.id.equalsIgnoreCase("Floor"))) {
+                    // This is the floor platform - use ONLY the elevator floor texture (NO white texture)
+                    System.out.println("[MazeRenderer]   -> FLOOR PLATFORM - applying ONLY elevator texture (no white)");
+
+                    // Set ONLY the elevator floor texture - do NOT set any other textures
+                    mat.set(com.badlogic.gdx.graphics.g3d.attributes.TextureAttribute.createDiffuse(elevatorFloorTexture));
+
+                    // Set neutral white color tint (doesn't add extra color)
+                    mat.set(com.badlogic.gdx.graphics.g3d.attributes.ColorAttribute.createDiffuse(
+                        1.0f, 1.0f, 1.0f, 1.0f // Neutral white tint
+                    ));
+                    mat.set(com.badlogic.gdx.graphics.g3d.attributes.ColorAttribute.createAmbient(
+                        0.3f, 0.3f, 0.3f, 1.0f // Lower ambient to see texture better
+                    ));
+
+                    System.out.println("[MazeRenderer]   -> Floor material now has ONLY elevator floor texture (no other textures)");
+                } else {
+                    // Everything else - use white texture ONLY
+                    System.out.println("[MazeRenderer]   -> Other part - applying white texture");
+                    mat.set(com.badlogic.gdx.graphics.g3d.attributes.TextureAttribute.createDiffuse(whiteTexture));
+                    mat.set(com.badlogic.gdx.graphics.g3d.attributes.ColorAttribute.createDiffuse(
+                        1.0f, 1.0f, 1.0f, 1.0f // Pure white
+                    ));
+                    mat.set(com.badlogic.gdx.graphics.g3d.attributes.ColorAttribute.createAmbient(
+                        1.0f, 1.0f, 1.0f, 1.0f // Bright white
+                    ));
+
+                    System.out.println("[MazeRenderer]   -> Other material now has ONLY white texture (no other textures)");
+                }
+            }
+            System.out.println("[MazeRenderer] Elevator textures applied (floor = elevator texture, rest = white)");
+
+            // Set up animation controller if animations exist
+            if (elevatorModel.animations.size > 0) {
+                elevatorAnimationController = new AnimationController(elevatorInstance);
+                elevatorAnimationController.setAnimation(elevatorModel.animations.get(0).id, -1);
+                System.out.println("[MazeRenderer] Loaded elevator GLB with animation: " + elevatorModel.animations.get(0).id);
+                System.out.println("[MazeRenderer] Animation duration: " + elevatorModel.animations.get(0).duration + "s");
+            } else {
+                System.out.println("[MazeRenderer] Loaded elevator GLB (no animations found)");
+            }
+
+            // Create walkable floor layer on top of elevator floor platform with maze floor texture
+            System.out.println("[MazeRenderer] Creating walkable floor layer on elevator platform...");
+            final ModelBuilder modelBuilder = new ModelBuilder();
+
+            // Clone the floor material so we can modify UV scaling independently
+            final Material floorMaterial = materialManager.createFloorMaterial();
+
+            // Create a visible walkable layer - 6 meters wider on each side
+            // Make it 0.1 cm thick (0.001 units)
+            // Size: 20.0 x 20.0 (8.0 + 6.0 + 6.0) (scaled by 1.5x = 30.0 x 30.0 - extremely wide!)
+            floorPlatformExtensionModel = modelBuilder.createBox(
+                20.0f, 0.001f, 20.0f,
+                floorMaterial,
+                VertexAttributes.Usage.Position
+                    | VertexAttributes.Usage.Normal
+                    | VertexAttributes.Usage.TextureCoordinates
+            );
+
+            floorPlatformExtensionInstance = new ModelInstance(floorPlatformExtensionModel);
+
+            // Scale UV coordinates to repeat texture properly (tile the texture)
+            // The platform is 20.0 units wide (30.0 with scale), so we need a lot of texture repetition
+            for (com.badlogic.gdx.graphics.g3d.Material mat : floorPlatformExtensionInstance.materials) {
+                // Scale UV by setting texture scale
+                final com.badlogic.gdx.graphics.g3d.attributes.TextureAttribute diffuseAttr =
+                    mat.get(com.badlogic.gdx.graphics.g3d.attributes.TextureAttribute.class,
+                        com.badlogic.gdx.graphics.g3d.attributes.TextureAttribute.Diffuse);
+                if (diffuseAttr != null) {
+                    diffuseAttr.scaleU = 3.0f; // Repeat texture 3 times horizontally (even larger tiles)
+                    diffuseAttr.scaleV = 3.0f; // Repeat texture 3 times vertically (even larger tiles)
+                }
+            }
+
+            System.out.println("[MazeRenderer] Walkable floor layer created with maze floor texture and UV scaling");
+
+        } catch (Exception e) {
+            System.err.println("[MazeRenderer] Failed to load elevator GLB model: " + e.getMessage());
+            e.printStackTrace();
+
+            // Fallback to simple box
+            System.out.println("[MazeRenderer] Creating fallback procedural elevator...");
+            final ModelBuilder modelBuilder = new ModelBuilder();
+            final Material fallbackMaterial = new Material(
+                com.badlogic.gdx.graphics.g3d.attributes.ColorAttribute.createDiffuse(
+                    1.0f, 1.0f, 1.0f, 1.0f
+                ),
+                com.badlogic.gdx.graphics.g3d.attributes.ColorAttribute.createAmbient(
+                    1.0f, 1.0f, 1.0f, 1.0f
+                )
+            );
+            elevatorModel = modelBuilder.createBox(
+                4.0f, 5.0f, 4.0f,
+                fallbackMaterial,
+                VertexAttributes.Usage.Position | VertexAttributes.Usage.Normal
+            );
+            elevatorInstance = new ModelInstance(elevatorModel);
+        }
+    }
+
+    /**
+     * Renders the elevator entity with animation.
+     * DEPRECATED: Use renderWithElevator() instead to prevent material bleeding.
+     *
+     * @param camera The game camera
+     * @param elevator The elevator entity
+     */
+    public void renderElevator(final PerspectiveCamera camera, final Elevator elevator) {
+        // This method is kept for backwards compatibility but does nothing
+        // The elevator is now rendered in renderWithElevator() to prevent material bleeding
+    }
+
+
+    /**
      * Renders the maze (walls and floor).
      *
      * @param camera The game camera
@@ -558,6 +677,75 @@ public class MazeRenderer {
         for (final ModelInstance lamp : ceilingLampInstances) {
             modelBatch.render(lamp);
         }
+        modelBatch.end();
+    }
+
+    /**
+     * Renders the maze and elevator together to prevent material bleeding.
+     *
+     * @param camera The game camera
+     * @param elevator The elevator entity
+     */
+    public void renderWithElevator(final PerspectiveCamera camera, final Elevator elevator) {
+        modelBatch.begin(camera);
+        modelBatch.render(floorInstance);
+        modelBatch.render(roofInstance);
+        for (final ModelInstance wall : wallInstances) {
+            modelBatch.render(wall);
+        }
+        // Render ceiling lamps
+        for (final ModelInstance lamp : ceilingLampInstances) {
+            modelBatch.render(lamp);
+        }
+
+        // Render elevator in the same batch to prevent material bleeding
+        if (elevatorInstance != null) {
+            // Update animation based on elevator state
+            if (elevatorAnimationController != null) {
+                final float delta = Gdx.graphics.getDeltaTime();
+
+                // Control animation based on door state
+                switch (elevator.getCurrentState()) {
+                    case OPENING:
+                        elevatorAnimationController.update(delta);
+                        break;
+                    case CLOSING:
+                        elevatorAnimationController.update(-delta); // Reverse
+                        break;
+                    case OPEN:
+                    case CLOSED:
+                        // Paused - don't update
+                        break;
+                }
+            }
+
+            // Update elevator transform
+            elevatorInstance.transform.idt();
+            elevatorInstance.transform.translate(elevator.getPosition());
+            elevatorInstance.transform.translate(0, 0, 0); // Ground level
+
+            // Scale to 1.5x size for better visibility
+            final float scale = 1.5f;
+            elevatorInstance.transform.scale(scale, scale, scale);
+
+            // Render elevator
+            modelBatch.render(elevatorInstance);
+
+            // Render walkable floor layer ON TOP of elevator floor platform
+            if (floorPlatformExtensionInstance != null) {
+                floorPlatformExtensionInstance.transform.idt();
+                // Position it raised above the elevator platform - 0.0005 is half the height (0.001/2)
+                floorPlatformExtensionInstance.transform.translate(
+                    elevator.getPosition().x,
+                    0.0005f, // Half the height so bottom sits at ground level
+                    elevator.getPosition().z
+                );
+                // Scale to match the elevator's 1.5x scale
+                floorPlatformExtensionInstance.transform.scale(scale, 1.0f, scale);
+                modelBatch.render(floorPlatformExtensionInstance);
+            }
+        }
+
         modelBatch.end();
     }
 
@@ -583,52 +771,6 @@ public class MazeRenderer {
     }
 
     /**
-     * Renders the elevator entity with door animation.
-     *
-     * @param camera The game camera
-     * @param elevator The elevator entity
-     */
-    public void renderElevator(final PerspectiveCamera camera, final Elevator elevator) {
-        if (elevatorInstance == null) return;
-
-        // Update animations if controller exists
-        if (elevatorAnimController != null) {
-            // Update animation based on door open percentage
-            final float doorOpenPercentage = elevator.getDoorOpenPercentage();
-
-            // If model has animations, play them based on state
-            if (elevatorModel.animations.size > 0) {
-                // Set animation time based on door percentage (0-100% of animation)
-                final String animId = elevatorModel.animations.get(0).id;
-                final float animDuration = elevatorModel.animations.get(0).duration;
-
-                // Manually set animation time instead of playing
-                elevatorAnimController.setAnimation(animId, -1); // -1 = loop
-                elevatorAnimController.update(doorOpenPercentage * animDuration);
-            }
-        }
-
-        // Update elevator transform
-        elevatorInstance.transform.idt(); // Reset transform
-
-        // Position elevator on the ground
-        final Vector3 elevatorPos = elevator.getPosition().cpy();
-        elevatorPos.y = 0f; // Floor level
-        elevatorInstance.transform.translate(elevatorPos);
-
-        // Scale elevator - FBX models are HUGE, scale down a lot
-        final float elevatorScale = 0.05f; // Much smaller!
-        elevatorInstance.transform.scale(elevatorScale, elevatorScale, elevatorScale);
-
-        // Render elevator with ESP (no depth test) like enemy so it's always visible
-        Gdx.gl.glDisable(com.badlogic.gdx.graphics.GL20.GL_DEPTH_TEST);
-        modelBatch.begin(camera);
-        modelBatch.render(elevatorInstance);
-        modelBatch.end();
-        Gdx.gl.glEnable(com.badlogic.gdx.graphics.GL20.GL_DEPTH_TEST);
-    }
-
-    /**
      * Disposes rendering resources.
      */
     public void dispose() {
@@ -639,6 +781,9 @@ public class MazeRenderer {
         if (enemyModel != null) enemyModel.dispose();
         if (ceilingLampModel != null) ceilingLampModel.dispose();
         if (elevatorModel != null) elevatorModel.dispose();
+        if (floorPlatformExtensionModel != null) floorPlatformExtensionModel.dispose();
+        if (whiteTexture != null) whiteTexture.dispose();
+        if (elevatorFloorTexture != null) elevatorFloorTexture.dispose();
     }
 }
 

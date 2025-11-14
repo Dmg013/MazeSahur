@@ -8,7 +8,7 @@ import nl.saxion.game.mazesahur.rendering.LightingManager;
 import nl.saxion.game.mazesahur.screen.GameScreen;
 import nl.saxion.gameapp.GameApp;
 
-/**
+/**w=
  * Handles all UI rendering for the game.
  * Displays HUD information, controls, and debug info.
  *

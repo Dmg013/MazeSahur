@@ -12,10 +12,14 @@ version = '1.0.0'
 
 repositories {
     mavenCentral()
+    maven { url 'https://jitpack.io' } // For gdx-gltf
 }
 
 dependencies {
     implementation group: 'io.gitlab.evertduipmans', name: 'saxiongameapp', version: 'latest.release'
+
+    // GLTF/GLB model loader for LibGDX
+    implementation 'com.github.mgsx-dev.gdx-gltf:core:2.2.1'
 }
 
 application {
