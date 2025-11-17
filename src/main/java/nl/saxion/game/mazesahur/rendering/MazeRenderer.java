@@ -45,6 +45,12 @@ public class MazeRenderer {
     private com.badlogic.gdx.graphics.Texture elevatorFloorTexture; // Floor platform texture (only for Mirror material)
     private Model floorPlatformExtensionModel; // Small platform in front of elevator with maze floor texture
     private ModelInstance floorPlatformExtensionInstance;
+    private Model wallLeftModel; // Left wall segment behind elevator
+    private Model wallRightModel; // Right wall segment behind elevator
+    private Model wallTopModel; // Top wall segment behind elevator
+    private ModelInstance wallLeftInstance;
+    private ModelInstance wallRightInstance;
+    private ModelInstance wallTopInstance;
 
     private ModelInstance floorInstance;
     private ModelInstance roofInstance;
@@ -577,7 +583,7 @@ public class MazeRenderer {
                     System.out.println("[MazeRenderer]   -> Other material now has ONLY white texture (no other textures)");
                 }
             }
-            System.out.println("[MazeRenderer] Elevator textures applied (floor = elevator texture, rest = white)");
+            System.out.println("[MazeRenderer] Elevator textures applied (floor = elevator texture, walls = white)");
 
             // Set up animation controller if animations exist
             if (elevatorModel.animations.size > 0) {
@@ -623,6 +629,71 @@ public class MazeRenderer {
             }
 
             System.out.println("[MazeRenderer] Walkable floor layer created with maze floor texture and UV scaling");
+
+            // Create wall segments behind elevator with door opening
+            System.out.println("[MazeRenderer] Creating wall segments behind elevator with door opening...");
+
+            // Create wall material
+            final Material wallMaterial = materialManager.createWallMaterial();
+
+            // Elevator dimensions (scaled 1.5x): width=4.5, height=6.0
+            // Create wall segments with door opening in center
+            // Door opening: 2.5m wide x 4.0m high (centered)
+
+            // LEFT wall segment: 9.98m wide x 8.0m high x 1cm thick (63cm langer aan beide kanten)
+            wallLeftModel = modelBuilder.createBox(
+                9.98f, 8.0f, 0.01f,
+                wallMaterial.copy(),
+                VertexAttributes.Usage.Position
+                    | VertexAttributes.Usage.Normal
+                    | VertexAttributes.Usage.TextureCoordinates
+            );
+
+            // RIGHT wall segment: 9.98m wide x 8.0m high x 1cm thick (63cm langer aan beide kanten)
+            wallRightModel = modelBuilder.createBox(
+                9.98f, 8.0f, 0.01f,
+                wallMaterial.copy(),
+                VertexAttributes.Usage.Position
+                    | VertexAttributes.Usage.Normal
+                    | VertexAttributes.Usage.TextureCoordinates
+            );
+
+            // TOP wall segment: 2.5m wide x 4.0m high x 1cm thick
+            wallTopModel = modelBuilder.createBox(
+                2.5f, 4.0f, 0.01f,
+                wallMaterial.copy(),
+                VertexAttributes.Usage.Position
+                    | VertexAttributes.Usage.Normal
+                    | VertexAttributes.Usage.TextureCoordinates
+            );
+
+            wallLeftInstance = new ModelInstance(wallLeftModel);
+            wallRightInstance = new ModelInstance(wallRightModel);
+            wallTopInstance = new ModelInstance(wallTopModel);
+
+            // Apply UV scaling to all wall segments (NO rotation to preserve normals)
+            for (ModelInstance instance : new ModelInstance[]{wallLeftInstance, wallRightInstance, wallTopInstance}) {
+                for (com.badlogic.gdx.graphics.g3d.Material mat : instance.materials) {
+                    final com.badlogic.gdx.graphics.g3d.attributes.TextureAttribute diffuseAttr =
+                        mat.get(com.badlogic.gdx.graphics.g3d.attributes.TextureAttribute.class,
+                            com.badlogic.gdx.graphics.g3d.attributes.TextureAttribute.Diffuse);
+                    if (diffuseAttr != null) {
+                        diffuseAttr.scaleU = 4.0f; // Breder voor de langere segmenten
+                        diffuseAttr.scaleV = 3.0f;
+                        // NO offsetU - keep normals pointing straight for flashlight
+                    }
+
+                    // Add color attributes for proper lighting
+                    if (!mat.has(com.badlogic.gdx.graphics.g3d.attributes.ColorAttribute.Diffuse)) {
+                        mat.set(com.badlogic.gdx.graphics.g3d.attributes.ColorAttribute.createDiffuse(1f, 1f, 1f, 1f));
+                    }
+                    if (!mat.has(com.badlogic.gdx.graphics.g3d.attributes.ColorAttribute.Ambient)) {
+                        mat.set(com.badlogic.gdx.graphics.g3d.attributes.ColorAttribute.createAmbient(0.4f, 0.4f, 0.4f, 1f));
+                    }
+                }
+            }
+
+            System.out.println("[MazeRenderer] Wall segments created: Left/Right 8.75m x 8.0m, door opening 2.5m x 4.0m");
 
         } catch (Exception e) {
             System.err.println("[MazeRenderer] Failed to load elevator GLB model: " + e.getMessage());
@@ -744,6 +815,45 @@ public class MazeRenderer {
                 floorPlatformExtensionInstance.transform.scale(scale, 1.0f, scale);
                 modelBatch.render(floorPlatformExtensionInstance);
             }
+
+            // Render wall segments at SIDE of elevator (rotated 90 degrees) with door opening
+            final float wallX = elevator.getPosition().x + 0.27f; // Side of elevator (nog 1cm meer naar achter)
+
+            // LEFT wall segment (links van de deur)
+            if (wallLeftInstance != null) {
+                wallLeftInstance.transform.idt();
+                wallLeftInstance.transform.translate(
+                    wallX,
+                    4.0f, // Center vertically (8.0 height / 2)
+                    elevator.getPosition().z - 6.24f // Links, half van 9.98 + half van 2.5 = 4.99 + 1.25 = 6.24
+                );
+                wallLeftInstance.transform.rotate(com.badlogic.gdx.math.Vector3.Y, 90);
+                modelBatch.render(wallLeftInstance);
+            }
+
+            // RIGHT wall segment (rechts van de deur)
+            if (wallRightInstance != null) {
+                wallRightInstance.transform.idt();
+                wallRightInstance.transform.translate(
+                    wallX,
+                    4.0f, // Center vertically (8.0 height / 2)
+                    elevator.getPosition().z + 6.24f // Rechts, half van 9.98 + half van 2.5 = 4.99 + 1.25 = 6.24
+                );
+                wallRightInstance.transform.rotate(com.badlogic.gdx.math.Vector3.Y, 90);
+                modelBatch.render(wallRightInstance);
+            }
+
+            // TOP wall segment (above door)
+            if (wallTopInstance != null) {
+                wallTopInstance.transform.idt();
+                wallTopInstance.transform.translate(
+                    wallX,
+                    6.0f, // Above door (4.0m door height + 2.0m segment center)
+                    elevator.getPosition().z // Centered horizontally
+                );
+                wallTopInstance.transform.rotate(com.badlogic.gdx.math.Vector3.Y, 90);
+                modelBatch.render(wallTopInstance);
+            }
         }
 
         modelBatch.end();
@@ -782,6 +892,9 @@ public class MazeRenderer {
         if (ceilingLampModel != null) ceilingLampModel.dispose();
         if (elevatorModel != null) elevatorModel.dispose();
         if (floorPlatformExtensionModel != null) floorPlatformExtensionModel.dispose();
+        if (wallLeftModel != null) wallLeftModel.dispose();
+        if (wallRightModel != null) wallRightModel.dispose();
+        if (wallTopModel != null) wallTopModel.dispose();
         if (whiteTexture != null) whiteTexture.dispose();
         if (elevatorFloorTexture != null) elevatorFloorTexture.dispose();
     }

@@ -21,7 +21,7 @@ public class GameUI {
     private static final int FONT_SIZE = 24;
 
     /**
-     * Initializes UI resources (fonts, etc.).
+     * Init
      */
     public void initialize() {
         System.out.println("[GameUI] Initializing UI and loading font...");
