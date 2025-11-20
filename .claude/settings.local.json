@@ -21,7 +21,8 @@
       "mcp__ide__getDiagnostics",
       "Bash(git restore:*)",
       "Bash(mkdir:*)",
-      "Bash(cp:*)"
+      "Bash(cp:*)",
+      "WebFetch(domain:libgdx.com)"
     ],
     "deny": [],
     "ask": []

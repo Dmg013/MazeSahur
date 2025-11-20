@@ -7,6 +7,7 @@ import java.util.*;
 /**
  * A* pathfinding service for navigating the maze.
  * Provides static methods for finding optimal paths and checking line of sight.
+ * Includes rail-based pathfinding with rotation constraints.
  *
  * @author Olivier, Luuk, Russell, Tim
  * @version 1.0
@@ -15,6 +16,101 @@ public final class PathfindingService {
 
     private PathfindingService() {
         throw new AssertionError("Cannot instantiate PathfindingService");
+    }
+
+    /**
+     * Finds a path using the rail network with rotation constraints.
+     * This creates rollercoaster-like movement where the entity can only
+     * rotate at junctions and follows rail directions.
+     *
+     * @param railNetwork The rail network to navigate
+     * @param startX Start grid X coordinate
+     * @param startZ Start grid Z coordinate
+     * @param endX End grid X coordinate
+     * @param endZ End grid Z coordinate
+     * @param currentDirection Current facing direction (can be null for initial pathfinding)
+     * @return List of RailPathNode representing the path with directions, or empty list if no path exists
+     */
+    public static List<RailPathNode> findRailPath(final RailNetwork railNetwork,
+                                                   final int startX, final int startZ,
+                                                   final int endX, final int endZ,
+                                                   final RailDirection currentDirection) {
+        final RailNode startNode = railNetwork.getNode(startX, startZ);
+        final RailNode endNode = railNetwork.getNode(endX, endZ);
+
+        if (startNode == null || endNode == null) {
+            return Collections.emptyList();
+        }
+
+        final PriorityQueue<RailSearchNode> openSet = new PriorityQueue<>(
+            Comparator.comparingDouble(n -> n.fScore));
+        final Set<String> closedSet = new HashSet<>();
+        final Map<String, RailSearchNode> allNodes = new HashMap<>();
+
+        // Create initial nodes for all possible starting directions
+        if (currentDirection != null) {
+            final RailSearchNode initial = new RailSearchNode(startNode, currentDirection);
+            initial.gScore = 0;
+            initial.fScore = heuristic(startX, startZ, endX, endZ);
+            openSet.add(initial);
+            allNodes.put(initial.key(), initial);
+        } else {
+            // If no current direction, try all possible directions
+            for (final RailDirection dir : RailDirection.values()) {
+                if (startNode.hasConnection(dir)) {
+                    final RailSearchNode initial = new RailSearchNode(startNode, dir);
+                    initial.gScore = 0;
+                    initial.fScore = heuristic(startX, startZ, endX, endZ);
+                    openSet.add(initial);
+                    allNodes.put(initial.key(), initial);
+                }
+            }
+        }
+
+        while (!openSet.isEmpty()) {
+            final RailSearchNode current = openSet.poll();
+
+            // Check if we reached the end
+            if (current.node.getX() == endX && current.node.getZ() == endZ) {
+                return reconstructRailPath(current);
+            }
+
+            closedSet.add(current.key());
+
+            // Explore all possible directions from current node
+            for (final Map.Entry<RailDirection, RailNode> entry : current.node.getConnections().entrySet()) {
+                final RailDirection moveDirection = entry.getKey();
+                final RailNode neighbor = entry.getValue();
+
+                final String neighborKey = RailSearchNode.makeKey(neighbor, moveDirection);
+                if (closedSet.contains(neighborKey)) {
+                    continue;
+                }
+
+                // Calculate rotation cost
+                final double rotationCost = current.direction.rotationCost(moveDirection);
+                final double tentativeGScore = current.gScore + rotationCost;
+
+                RailSearchNode neighborNode = allNodes.get(neighborKey);
+                if (neighborNode == null) {
+                    neighborNode = new RailSearchNode(neighbor, moveDirection);
+                    allNodes.put(neighborKey, neighborNode);
+                }
+
+                if (tentativeGScore < neighborNode.gScore) {
+                    neighborNode.parent = current;
+                    neighborNode.gScore = tentativeGScore;
+                    neighborNode.fScore = tentativeGScore + heuristic(
+                        neighbor.getX(), neighbor.getZ(), endX, endZ);
+
+                    if (!openSet.contains(neighborNode)) {
+                        openSet.add(neighborNode);
+                    }
+                }
+            }
+        }
+
+        return Collections.emptyList();
     }
 
     /**
@@ -140,6 +236,19 @@ public final class PathfindingService {
     }
 
     /**
+     * Reconstructs the rail path from the end node.
+     */
+    private static List<RailPathNode> reconstructRailPath(RailSearchNode node) {
+        final List<RailPathNode> path = new ArrayList<>();
+        while (node != null) {
+            path.add(new RailPathNode(node.node.getX(), node.node.getZ(), node.direction));
+            node = node.parent;
+        }
+        Collections.reverse(path);
+        return path;
+    }
+
+    /**
      * Internal node class for A* pathfinding.
      */
     private static class Node {
@@ -160,6 +269,63 @@ public final class PathfindingService {
 
         static String makeKey(final int x, final int z) {
             return x + "," + z;
+        }
+    }
+
+    /**
+     * Internal node class for rail-based A* pathfinding.
+     * Includes direction to track rotation costs.
+     */
+    private static class RailSearchNode {
+        final RailNode node;
+        final RailDirection direction;
+        RailSearchNode parent;
+        double gScore = Double.MAX_VALUE;
+        double fScore = Double.MAX_VALUE;
+
+        RailSearchNode(final RailNode node, final RailDirection direction) {
+            this.node = node;
+            this.direction = direction;
+        }
+
+        String key() {
+            return makeKey(node, direction);
+        }
+
+        static String makeKey(final RailNode node, final RailDirection direction) {
+            return node.getX() + "," + node.getZ() + ":" + direction.name();
+        }
+    }
+
+    /**
+     * Represents a node in a rail path with position and direction.
+     */
+    public static class RailPathNode {
+        private final int x;
+        private final int z;
+        private final RailDirection direction;
+
+        public RailPathNode(final int x, final int z, final RailDirection direction) {
+            this.x = x;
+            this.z = z;
+            this.direction = direction;
+        }
+
+        public int getX() {
+            return x;
+        }
+
+        public int getZ() {
+            return z;
+        }
+
+        public RailDirection getDirection() {
+            return direction;
+        }
+
+        @Override
+        public String toString() {
+            return "(" + x + ", " + z + " -> " + direction + ")";
         }
     }
 }

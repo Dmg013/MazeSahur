@@ -1,6 +1,8 @@
 package nl.saxion.game.mazesahur.rendering;
 
 import com.badlogic.gdx.Gdx;
+import com.badlogic.gdx.graphics.Color;
+import com.badlogic.gdx.graphics.GL20;
 import com.badlogic.gdx.graphics.PerspectiveCamera;
 import com.badlogic.gdx.graphics.VertexAttributes;
 import com.badlogic.gdx.graphics.g3d.Material;
@@ -10,9 +12,18 @@ import com.badlogic.gdx.graphics.g3d.ModelInstance;
 import com.badlogic.gdx.graphics.g3d.loader.ObjLoader;
 import com.badlogic.gdx.graphics.g3d.utils.ModelBuilder;
 import com.badlogic.gdx.graphics.g3d.utils.AnimationController;
+import com.badlogic.gdx.graphics.g3d.shaders.DefaultShader;
+import com.badlogic.gdx.graphics.g3d.utils.ShaderProvider;
+import com.badlogic.gdx.graphics.g3d.Renderable;
+import com.badlogic.gdx.graphics.g3d.Environment;
+import com.badlogic.gdx.graphics.g3d.attributes.ColorAttribute;
+import com.badlogic.gdx.graphics.glutils.ShapeRenderer;
 import com.badlogic.gdx.math.Vector3;
 import net.mgsx.gltf.loaders.glb.GLBLoader;
 import net.mgsx.gltf.scene3d.scene.SceneAsset;
+import nl.saxion.game.mazesahur.ai.RailDirection;
+import nl.saxion.game.mazesahur.ai.RailNetwork;
+import nl.saxion.game.mazesahur.ai.RailNode;
 import nl.saxion.game.mazesahur.config.GameConfig;
 import nl.saxion.game.mazesahur.entity.Enemy;
 import nl.saxion.game.mazesahur.entity.Elevator;
@@ -20,6 +31,7 @@ import nl.saxion.game.mazesahur.world.Maze;
 
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Map;
 
 /**
  * Handles rendering of the 3D maze and entities.
@@ -35,6 +47,7 @@ public class MazeRenderer {
     private final LightingManager lightingManager;
 
     private ModelBatch modelBatch;
+    private ModelBatch skinnedModelBatch; // Separate batch for skinned animations
     private Model wallModel;
     private Model floorModel;
     private Model roofModel;
@@ -61,11 +74,16 @@ public class MazeRenderer {
     private List<Boolean> lampIsBroken; // Track which lamps are completely broken
     private ModelInstance elevatorInstance;
     private AnimationController elevatorAnimationController;
+    private AnimationController enemyAnimationController;
+    private Environment enemyEnvironment; // Dark environment for enemy lighting
 
     // Lamp flickering
     private float[] lampFlickerTimers;
     private float[] lampFlickerIntensities;
     private int flickerUpdateCounter = 0; // Update every N frames for performance
+
+    // Debug visualization
+    private ShapeRenderer shapeRenderer;
 
     /**
      * Creates a new maze renderer.
@@ -93,6 +111,41 @@ public class MazeRenderer {
         final SpotlightShaderProvider shaderProvider =
             new SpotlightShaderProvider(lightingManager.getShader());
         modelBatch = new ModelBatch(shaderProvider);
+
+        // Create separate ModelBatch for skinned animations with increased bone support
+        // Default supports 12 bones, but Mixamo models use 30-60 bones
+        final DefaultShader.Config config = new DefaultShader.Config();
+        config.numBones = 60; // Support up to 60 bones for Mixamo models
+
+        final ShaderProvider skinnedShaderProvider = new ShaderProvider() {
+            private com.badlogic.gdx.graphics.g3d.Shader shader;
+
+            @Override
+            public com.badlogic.gdx.graphics.g3d.Shader getShader(final Renderable renderable) {
+                if (shader == null) {
+                    shader = new DefaultShader(renderable, config);
+                    shader.init();
+                }
+                return shader;
+            }
+
+            @Override
+            public void dispose() {
+                if (shader != null) {
+                    shader.dispose();
+                }
+            }
+        };
+        skinnedModelBatch = new ModelBatch(skinnedShaderProvider);
+        System.out.println("[MazeRenderer] Created skinned ModelBatch with 60 bone support");
+
+        // Create dark environment for enemy (very low ambient light)
+        enemyEnvironment = new Environment();
+        enemyEnvironment.set(new ColorAttribute(ColorAttribute.AmbientLight, 0.05f, 0.05f, 0.05f, 1f));
+        System.out.println("[MazeRenderer] Created dark environment for enemy lighting");
+
+        // Create debug shape renderer
+        shapeRenderer = new ShapeRenderer();
 
         // Build maze geometry
         buildMazeModels();
@@ -177,32 +230,88 @@ public class MazeRenderer {
     }
 
     /**
-     * Loads the enemy 3D model.
+     * Loads the enemy 3D model with skeletal animations from GLB file.
      */
     private void loadEnemyModel() {
-        final ObjLoader objLoader = new ObjLoader();
-        final ObjLoader.ObjLoaderParameters params = new ObjLoader.ObjLoaderParameters();
-        params.flipV = true; // IMPORTANT: Fix UV mapping
-        enemyModel = objLoader.loadModel(Gdx.files.internal("models/tung tung tung sahur.obj"), params);
+        try {
+            System.out.println("[MazeRenderer] Loading enemy GLB model...");
 
-        final com.badlogic.gdx.graphics.Texture enemyTexture =
-            new com.badlogic.gdx.graphics.Texture(Gdx.files.internal("models/Material.png"), true);
-        enemyTexture.setFilter(
-            com.badlogic.gdx.graphics.Texture.TextureFilter.MipMapLinearLinear,
-            com.badlogic.gdx.graphics.Texture.TextureFilter.Linear
-        );
-        enemyTexture.setWrap(
-            com.badlogic.gdx.graphics.Texture.TextureWrap.ClampToEdge,
-            com.badlogic.gdx.graphics.Texture.TextureWrap.ClampToEdge
-        );
+            // Load GLB file using gdx-gltf library
+            final SceneAsset sceneAsset = new GLBLoader().load(
+                Gdx.files.internal("models/enemy/Walking.glb")
+            );
 
-        enemyInstance = new ModelInstance(enemyModel);
+            // Get the model from the scene
+            enemyModel = sceneAsset.scene.model;
+            enemyInstance = new ModelInstance(enemyModel);
 
-        // Apply material
-        final Material enemyMaterial = materialManager.createSahurMaterial(enemyTexture);
-        for (final com.badlogic.gdx.graphics.g3d.Material mat : enemyInstance.materials) {
-            mat.clear();
-            mat.set(enemyMaterial);
+            System.out.println("[MazeRenderer] Enemy GLB model loaded successfully");
+
+            // Calculate model bounding box for debugging scale issues
+            enemyInstance.calculateBoundingBox(new com.badlogic.gdx.math.collision.BoundingBox());
+            final com.badlogic.gdx.math.collision.BoundingBox bounds = new com.badlogic.gdx.math.collision.BoundingBox();
+            enemyInstance.calculateBoundingBox(bounds);
+            final Vector3 dimensions = bounds.getDimensions(new Vector3());
+            System.out.println("[MazeRenderer] Enemy model dimensions: " + dimensions.x + " x " + dimensions.y + " x " + dimensions.z);
+            System.out.println("[MazeRenderer] Enemy model center: " + bounds.getCenter(new Vector3()));
+
+            // Set up animation controller if animations exist
+            if (enemyModel.animations.size > 0) {
+                System.out.println("[MazeRenderer] Setting up AnimationController...");
+
+                // List all available animations
+                for (int i = 0; i < enemyModel.animations.size; i++) {
+                    final String animId = enemyModel.animations.get(i).id;
+                    System.out.println("[MazeRenderer]   Animation " + i + ": " + animId
+                        + " (duration: " + enemyModel.animations.get(i).duration + "s)");
+                }
+
+                // Create animation controller
+                enemyAnimationController = new AnimationController(enemyInstance);
+
+                // Get the first animation ID
+                final String animId = enemyModel.animations.get(0).id;
+
+                // Set animation to loop infinitely (-1 = infinite loop)
+                enemyAnimationController.setAnimation(animId, -1);
+
+                System.out.println("[MazeRenderer] Animation '" + animId + "' set to loop infinitely");
+                System.out.println("[MazeRenderer] AnimationController created successfully");
+            } else {
+                System.out.println("[MazeRenderer] WARNING: No animations found in enemy GLB model!");
+            }
+
+        } catch (final Exception e) {
+            System.err.println("[MazeRenderer] ERROR: Failed to load enemy GLB model");
+            e.printStackTrace();
+
+            // Fallback to OBJ model if GLB loading fails
+            System.out.println("[MazeRenderer] Falling back to OBJ model...");
+            final ObjLoader objLoader = new ObjLoader();
+            final ObjLoader.ObjLoaderParameters params = new ObjLoader.ObjLoaderParameters();
+            params.flipV = true;
+            enemyModel = objLoader.loadModel(Gdx.files.internal("models/tung tung tung sahur.obj"), params);
+
+            final com.badlogic.gdx.graphics.Texture enemyTexture =
+                new com.badlogic.gdx.graphics.Texture(Gdx.files.internal("models/Material.png"), true);
+            enemyTexture.setFilter(
+                com.badlogic.gdx.graphics.Texture.TextureFilter.MipMapLinearLinear,
+                com.badlogic.gdx.graphics.Texture.TextureFilter.Linear
+            );
+            enemyTexture.setWrap(
+                com.badlogic.gdx.graphics.Texture.TextureWrap.ClampToEdge,
+                com.badlogic.gdx.graphics.Texture.TextureWrap.ClampToEdge
+            );
+
+            enemyInstance = new ModelInstance(enemyModel);
+
+            final Material enemyMaterial = materialManager.createSahurMaterial(enemyTexture);
+            for (final com.badlogic.gdx.graphics.g3d.Material mat : enemyInstance.materials) {
+                mat.clear();
+                mat.set(enemyMaterial);
+            }
+
+            System.out.println("[MazeRenderer] Loaded fallback OBJ model (no animations)");
         }
     }
 
@@ -866,37 +975,223 @@ public class MazeRenderer {
      * @param enemy The enemy entity
      */
     public void renderEnemy(final PerspectiveCamera camera, final Enemy enemy) {
+        // Update animation if available
+        if (enemyAnimationController != null) {
+            final float delta = Gdx.graphics.getDeltaTime();
+            final float speedMultiplier = enemy.getAnimationSpeedMultiplier();
+
+            // Update animation with speed multiplier based on AI state
+            // (faster when chasing, slower when wandering)
+            final float animDelta = delta * speedMultiplier;
+            enemyAnimationController.update(animDelta);
+
+            // Debug: Log animation state occasionally (every 60 frames)
+            if (Gdx.graphics.getFrameId() % 60 == 0) {
+                System.out.println("[MazeRenderer] Animation update: delta=" + animDelta
+                    + ", speed=" + speedMultiplier + ", state=" + enemy.getCurrentState());
+            }
+        } else {
+            // Debug: Log if animation controller is missing
+            if (Gdx.graphics.getFrameId() % 60 == 0) {
+                System.out.println("[MazeRenderer] WARNING: No animation controller!");
+            }
+        }
+
         // Update enemy transform - IMPORTANT: order is translate -> rotate -> scale
         enemyInstance.transform.idt(); // Reset transform
         enemyInstance.transform.translate(enemy.getPosition());
         enemyInstance.transform.rotate(Vector3.Y, enemy.getYaw());
-        enemyInstance.transform.scale(GameConfig.ENEMY_SCALE, GameConfig.ENEMY_SCALE, GameConfig.ENEMY_SCALE);
+
+        // Use GLB-specific scale from GameConfig (adjust ENEMY_GLB_SCALE if too large/small)
+        enemyInstance.transform.scale(GameConfig.ENEMY_GLB_SCALE,
+                                      GameConfig.ENEMY_GLB_SCALE,
+                                      GameConfig.ENEMY_GLB_SCALE);
+
+        // Update enemy lighting based on player flashlight
+        updateEnemyLighting(camera, enemy);
 
         // Render with ESP (no depth test for visibility through walls)
+        // Use skinnedModelBatch for proper bone animation support
         Gdx.gl.glDisable(com.badlogic.gdx.graphics.GL20.GL_DEPTH_TEST);
-        modelBatch.begin(camera);
-        modelBatch.render(enemyInstance);
-        modelBatch.end();
+        skinnedModelBatch.begin(camera);
+        skinnedModelBatch.render(enemyInstance, enemyEnvironment);
+        skinnedModelBatch.end();
         Gdx.gl.glEnable(com.badlogic.gdx.graphics.GL20.GL_DEPTH_TEST);
+    }
+
+    /**
+     * Updates enemy lighting to simulate flashlight illumination.
+     * Calculates brightness based on distance and angle to flashlight.
+     */
+    private void updateEnemyLighting(final PerspectiveCamera camera, final Enemy enemy) {
+        // Get flashlight position (camera position)
+        final Vector3 flashlightPos = camera.position;
+        final Vector3 flashlightDir = camera.direction;
+        final Vector3 enemyPos = enemy.getPosition();
+
+        // Calculate vector from flashlight to enemy
+        final Vector3 toEnemy = enemyPos.cpy().sub(flashlightPos);
+        final float distance = toEnemy.len();
+        toEnemy.nor();
+
+        // Calculate angle between flashlight direction and enemy direction
+        final float angle = flashlightDir.dot(toEnemy);
+
+        // Spotlight cone parameters (matching SpotlightShader)
+        final float innerCone = (float) Math.cos(Math.toRadians(25.0));
+        final float outerCone = (float) Math.cos(Math.toRadians(35.0));
+
+        // Calculate spotlight intensity based on angle
+        float spotlightIntensity = 0f;
+        if (angle > outerCone) {
+            if (angle > innerCone) {
+                spotlightIntensity = 1.0f; // Full intensity in inner cone
+            } else {
+                // Smooth falloff between inner and outer cone
+                spotlightIntensity = (angle - outerCone) / (innerCone - outerCone);
+            }
+
+            // Apply distance attenuation
+            final float attenuation = 1.0f / (1.0f + 0.015f * distance * distance);
+            spotlightIntensity *= attenuation;
+        }
+
+        // Base ambient light (very dark)
+        final float baseAmbient = 0.02f;
+
+        // Add flashlight contribution
+        final float finalBrightness = baseAmbient + spotlightIntensity * 0.8f;
+
+        // Update environment with calculated brightness
+        enemyEnvironment.set(new ColorAttribute(ColorAttribute.AmbientLight,
+            finalBrightness * 1.4f, // Slightly warm tint
+            finalBrightness * 1.4f,
+            finalBrightness * 1.35f,
+            1f));
     }
 
     /**
      * Disposes rendering resources.
      */
+    /**
+     * Renders the rail network for debugging purposes.
+     * Shows rail nodes with different colors based on type:
+     * - Green: Regular corridor nodes
+     * - Yellow: Junction nodes (3+ connections)
+     * - Red: Dead-end nodes (1 connection)
+     * - Cyan lines: Rail connections
+     *
+     * @param camera The game camera
+     * @param railNetwork The rail network to visualize
+     */
+    public void renderRailNetworkDebug(final PerspectiveCamera camera, final RailNetwork railNetwork) {
+        if (shapeRenderer == null) {
+            return;
+        }
+
+        // Enable blending for transparency
+        Gdx.gl.glEnable(GL20.GL_BLEND);
+        Gdx.gl.glBlendFunc(GL20.GL_SRC_ALPHA, GL20.GL_ONE_MINUS_SRC_ALPHA);
+
+        shapeRenderer.setProjectionMatrix(camera.combined);
+        shapeRenderer.begin(ShapeRenderer.ShapeType.Line);
+
+        final float nodeHeight = GameConfig.PLAYER_HEIGHT;
+
+        // Draw connections as lines
+        shapeRenderer.setColor(Color.CYAN);
+        for (final RailNode node : railNetwork.getAllNodes().values()) {
+            final float nodeX = node.getX() * Maze.CELL_SIZE + Maze.CELL_SIZE / 2f;
+            final float nodeZ = node.getZ() * Maze.CELL_SIZE + Maze.CELL_SIZE / 2f;
+
+            for (final Map.Entry<RailDirection, RailNode> entry : node.getConnections().entrySet()) {
+                final RailNode neighbor = entry.getValue();
+                final float neighborX = neighbor.getX() * Maze.CELL_SIZE + Maze.CELL_SIZE / 2f;
+                final float neighborZ = neighbor.getZ() * Maze.CELL_SIZE + Maze.CELL_SIZE / 2f;
+
+                // Only draw each connection once (from lower to higher grid position)
+                if (node.getX() < neighbor.getX() || (node.getX() == neighbor.getX()
+                    && node.getZ() < neighbor.getZ())) {
+                    shapeRenderer.line(nodeX, nodeHeight, nodeZ, neighborX, nodeHeight, neighborZ);
+                }
+            }
+        }
+
+        shapeRenderer.end();
+
+        // Draw nodes as boxes
+        shapeRenderer.begin(ShapeRenderer.ShapeType.Filled);
+
+        for (final RailNode node : railNetwork.getAllNodes().values()) {
+            final float nodeX = node.getX() * Maze.CELL_SIZE + Maze.CELL_SIZE / 2f;
+            final float nodeZ = node.getZ() * Maze.CELL_SIZE + Maze.CELL_SIZE / 2f;
+            final float boxSize = 0.3f;
+
+            // Color based on node type
+            if (node.isDeadEnd()) {
+                shapeRenderer.setColor(Color.RED);
+            } else if (node.isJunction()) {
+                shapeRenderer.setColor(Color.YELLOW);
+            } else {
+                shapeRenderer.setColor(Color.GREEN);
+            }
+
+            // Draw a small box at each node
+            shapeRenderer.box(nodeX - boxSize / 2f, nodeHeight - boxSize / 2f, nodeZ - boxSize / 2f,
+                boxSize, boxSize, boxSize);
+        }
+
+        shapeRenderer.end();
+
+        Gdx.gl.glDisable(GL20.GL_BLEND);
+    }
+
     public void dispose() {
-        if (modelBatch != null) modelBatch.dispose();
-        if (wallModel != null) wallModel.dispose();
-        if (floorModel != null) floorModel.dispose();
-        if (roofModel != null) roofModel.dispose();
-        if (enemyModel != null) enemyModel.dispose();
-        if (ceilingLampModel != null) ceilingLampModel.dispose();
-        if (elevatorModel != null) elevatorModel.dispose();
-        if (floorPlatformExtensionModel != null) floorPlatformExtensionModel.dispose();
-        if (wallLeftModel != null) wallLeftModel.dispose();
-        if (wallRightModel != null) wallRightModel.dispose();
-        if (wallTopModel != null) wallTopModel.dispose();
-        if (whiteTexture != null) whiteTexture.dispose();
-        if (elevatorFloorTexture != null) elevatorFloorTexture.dispose();
+        if (modelBatch != null) {
+            modelBatch.dispose();
+        }
+        if (skinnedModelBatch != null) {
+            skinnedModelBatch.dispose();
+        }
+        if (wallModel != null) {
+            wallModel.dispose();
+        }
+        if (floorModel != null) {
+            floorModel.dispose();
+        }
+        if (roofModel != null) {
+            roofModel.dispose();
+        }
+        if (enemyModel != null) {
+            enemyModel.dispose();
+        }
+        if (ceilingLampModel != null) {
+            ceilingLampModel.dispose();
+        }
+        if (elevatorModel != null) {
+            elevatorModel.dispose();
+        }
+        if (floorPlatformExtensionModel != null) {
+            floorPlatformExtensionModel.dispose();
+        }
+        if (wallLeftModel != null) {
+            wallLeftModel.dispose();
+        }
+        if (wallRightModel != null) {
+            wallRightModel.dispose();
+        }
+        if (wallTopModel != null) {
+            wallTopModel.dispose();
+        }
+        if (whiteTexture != null) {
+            whiteTexture.dispose();
+        }
+        if (elevatorFloorTexture != null) {
+            elevatorFloorTexture.dispose();
+        }
+        if (shapeRenderer != null) {
+            shapeRenderer.dispose();
+        }
     }
 }
 

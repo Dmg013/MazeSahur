@@ -40,11 +40,17 @@ public final class GameConfig {
     public static final float ENEMY_COLLISION_RADIUS = 3.5f;
     public static final float ENEMY_CATCH_RADIUS = 2.0f;
     public static final float ENEMY_HEIGHT = 0.5f;
-    public static final float ENEMY_SCALE = 0.005f;
+    public static final float ENEMY_SCALE = 0.005f; // Old OBJ model scale (deprecated)
+    public static final float ENEMY_GLB_SCALE = 0.4f; // GLB/Mixamo model scale (adjust as needed)
     public static final float ENEMY_DETECTION_RANGE = 100f;
     public static final float ENEMY_CHASE_MEMORY_DURATION = 10f;
     public static final float PATH_UPDATE_INTERVAL = 3f;
     public static final float WANDER_UPDATE_INTERVAL = 2f;
+
+    // Enemy animation settings
+    public static final float ENEMY_ANIM_SPEED_WANDER = 0.8f;  // Slower walk when wandering
+    public static final float ENEMY_ANIM_SPEED_CHASE = 1.5f;   // Faster run when chasing
+    public static final float ENEMY_ANIM_SPEED_PURSUE = 1.2f;  // Medium walk when pursuing
 
     // Death & Jumpscare settings
     public static final float JUMPSCARE_DURATION = 1.5f;

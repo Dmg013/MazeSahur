@@ -61,6 +61,9 @@ public class GameScreen extends ScalableGameScreen {
     private Vector3 jumpscareShakeOffset = new Vector3();
     private boolean jumpscareActive = false;
 
+    // Debug visualization
+    private boolean showRailNetwork = false;
+
     /**
      * Creates a new game screen with default settings.
      */
@@ -181,6 +184,11 @@ public class GameScreen extends ScalableGameScreen {
         // Render 3D scene (elevator is rendered together with maze to prevent material bleeding)
         mazeRenderer.renderWithElevator(camera, elevator);
         mazeRenderer.renderEnemy(camera, enemy);
+
+        // Render debug visualizations
+        if (showRailNetwork) {
+            mazeRenderer.renderRailNetworkDebug(camera, enemy.getRailNetwork());
+        }
 
         // Render UI (hide during jumpscare)
         if (!jumpscareActive) {
@@ -506,6 +514,13 @@ public class GameScreen extends ScalableGameScreen {
         // Toggle flashlight
         if (Gdx.input.isKeyJustPressed(Input.Keys.F)) {
             lightingManager.toggleFlashlight();
+        }
+
+        // Toggle rail network visualization (debug)
+        if (Gdx.input.isKeyJustPressed(Input.Keys.R)) {
+            showRailNetwork = !showRailNetwork;
+            System.out.println("[GameScreen] Rail network visualization: "
+                + (showRailNetwork ? "ON" : "OFF"));
         }
 
         // Toggle elevator doors with E key
