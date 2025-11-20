@@ -367,7 +367,9 @@ public class Enemy {
         // Move TOWARD the waypoint position (not in rail direction!)
         // The rail direction is only used for visual rotation
         final Vector3 moveDirection = new Vector3(dx / distance, 0, dz / distance);
-        final Vector3 movement = moveDirection.scl(GameConfig.ENEMY_SPEED * delta);
+        // Use faster speed when running (chasing)
+        final float speed = isRunning() ? GameConfig.ENEMY_SPEED_RUNNING : GameConfig.ENEMY_SPEED;
+        final Vector3 movement = moveDirection.scl(speed * delta);
         final Vector3 newPosition = position.cpy().add(movement);
 
         // Check collision and apply movement
@@ -751,6 +753,16 @@ public class Enemy {
             default:
                 return 1.0f;
         }
+    }
+
+    /**
+     * Checks if the enemy is currently running (chasing state).
+     * Used by renderer to switch between walking and running models.
+     *
+     * @return true if enemy should use running animation/model
+     */
+    public boolean isRunning() {
+        return currentState == AIState.CHASING;
     }
 
     // Getters

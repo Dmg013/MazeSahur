@@ -51,7 +51,8 @@ public class MazeRenderer {
     private Model wallModel;
     private Model floorModel;
     private Model roofModel;
-    private Model enemyModel;
+    private Model enemyWalkingModel;
+    private Model enemyRunningModel;
     private Model ceilingLampModel;
     private Model elevatorModel;
     private com.badlogic.gdx.graphics.Texture whiteTexture; // 1x1 white texture for elevator (not used for floor)
@@ -68,13 +69,15 @@ public class MazeRenderer {
     private ModelInstance floorInstance;
     private ModelInstance roofInstance;
     private List<ModelInstance> wallInstances;
-    private ModelInstance enemyInstance;
+    private ModelInstance enemyWalkingInstance;
+    private ModelInstance enemyRunningInstance;
     private List<ModelInstance> ceilingLampInstances;
     private List<Vector3> lampLightPositions;
     private List<Boolean> lampIsBroken; // Track which lamps are completely broken
     private ModelInstance elevatorInstance;
     private AnimationController elevatorAnimationController;
-    private AnimationController enemyAnimationController;
+    private AnimationController enemyWalkingAnimationController;
+    private AnimationController enemyRunningAnimationController;
     private Environment enemyEnvironment; // Dark environment for enemy lighting
 
     // Lamp flickering
@@ -230,59 +233,73 @@ public class MazeRenderer {
     }
 
     /**
-     * Loads the enemy 3D model with skeletal animations from GLB file.
+     * Loads the enemy 3D models (Walking and Running) with skeletal animations from GLB files.
      */
     private void loadEnemyModel() {
         try {
-            System.out.println("[MazeRenderer] Loading enemy GLB model...");
+            System.out.println("[MazeRenderer] Loading enemy GLB models...");
 
-            // Load GLB file using gdx-gltf library
-            final SceneAsset sceneAsset = new GLBLoader().load(
+            // Load Walking GLB file
+            final SceneAsset walkingSceneAsset = new GLBLoader().load(
                 Gdx.files.internal("models/enemy/Walking.glb")
             );
+            enemyWalkingModel = walkingSceneAsset.scene.model;
+            enemyWalkingInstance = new ModelInstance(enemyWalkingModel);
 
-            // Get the model from the scene
-            enemyModel = sceneAsset.scene.model;
-            enemyInstance = new ModelInstance(enemyModel);
+            // Load Running GLB file
+            final SceneAsset runningSceneAsset = new GLBLoader().load(
+                Gdx.files.internal("models/enemy/Running.glb")
+            );
+            enemyRunningModel = runningSceneAsset.scene.model;
+            enemyRunningInstance = new ModelInstance(enemyRunningModel);
 
-            System.out.println("[MazeRenderer] Enemy GLB model loaded successfully");
+            System.out.println("[MazeRenderer] Enemy GLB models (Walking and Running) loaded successfully");
 
-            // Calculate model bounding box for debugging scale issues
-            enemyInstance.calculateBoundingBox(new com.badlogic.gdx.math.collision.BoundingBox());
+            // Calculate model bounding box for debugging scale issues (using walking model)
+            enemyWalkingInstance.calculateBoundingBox(new com.badlogic.gdx.math.collision.BoundingBox());
             final com.badlogic.gdx.math.collision.BoundingBox bounds = new com.badlogic.gdx.math.collision.BoundingBox();
-            enemyInstance.calculateBoundingBox(bounds);
+            enemyWalkingInstance.calculateBoundingBox(bounds);
             final Vector3 dimensions = bounds.getDimensions(new Vector3());
             System.out.println("[MazeRenderer] Enemy model dimensions: " + dimensions.x + " x " + dimensions.y + " x " + dimensions.z);
             System.out.println("[MazeRenderer] Enemy model center: " + bounds.getCenter(new Vector3()));
 
-            // Set up animation controller if animations exist
-            if (enemyModel.animations.size > 0) {
-                System.out.println("[MazeRenderer] Setting up AnimationController...");
-
-                // List all available animations
-                for (int i = 0; i < enemyModel.animations.size; i++) {
-                    final String animId = enemyModel.animations.get(i).id;
-                    System.out.println("[MazeRenderer]   Animation " + i + ": " + animId
-                        + " (duration: " + enemyModel.animations.get(i).duration + "s)");
+            // Set up animation controllers for both models
+            // Walking animation controller
+            if (enemyWalkingModel.animations.size > 0) {
+                System.out.println("[MazeRenderer] Setting up Walking AnimationController...");
+                for (int i = 0; i < enemyWalkingModel.animations.size; i++) {
+                    final String animId = enemyWalkingModel.animations.get(i).id;
+                    System.out.println("[MazeRenderer]   Walking Animation " + i + ": " + animId
+                        + " (duration: " + enemyWalkingModel.animations.get(i).duration + "s)");
                 }
-
-                // Create animation controller
-                enemyAnimationController = new AnimationController(enemyInstance);
-
-                // Get the first animation ID
-                final String animId = enemyModel.animations.get(0).id;
-
-                // Set animation to loop infinitely (-1 = infinite loop)
-                enemyAnimationController.setAnimation(animId, -1);
-
-                System.out.println("[MazeRenderer] Animation '" + animId + "' set to loop infinitely");
-                System.out.println("[MazeRenderer] AnimationController created successfully");
+                enemyWalkingAnimationController = new AnimationController(enemyWalkingInstance);
+                final String walkAnimId = enemyWalkingModel.animations.get(0).id;
+                enemyWalkingAnimationController.setAnimation(walkAnimId, -1);
+                System.out.println("[MazeRenderer] Walking animation '" + walkAnimId + "' set to loop infinitely");
             } else {
-                System.out.println("[MazeRenderer] WARNING: No animations found in enemy GLB model!");
+                System.out.println("[MazeRenderer] WARNING: No animations found in Walking GLB model!");
             }
 
+            // Running animation controller
+            if (enemyRunningModel.animations.size > 0) {
+                System.out.println("[MazeRenderer] Setting up Running AnimationController...");
+                for (int i = 0; i < enemyRunningModel.animations.size; i++) {
+                    final String animId = enemyRunningModel.animations.get(i).id;
+                    System.out.println("[MazeRenderer]   Running Animation " + i + ": " + animId
+                        + " (duration: " + enemyRunningModel.animations.get(i).duration + "s)");
+                }
+                enemyRunningAnimationController = new AnimationController(enemyRunningInstance);
+                final String runAnimId = enemyRunningModel.animations.get(0).id;
+                enemyRunningAnimationController.setAnimation(runAnimId, -1);
+                System.out.println("[MazeRenderer] Running animation '" + runAnimId + "' set to loop infinitely");
+            } else {
+                System.out.println("[MazeRenderer] WARNING: No animations found in Running GLB model!");
+            }
+
+            System.out.println("[MazeRenderer] AnimationControllers created successfully");
+
         } catch (final Exception e) {
-            System.err.println("[MazeRenderer] ERROR: Failed to load enemy GLB model");
+            System.err.println("[MazeRenderer] ERROR: Failed to load enemy GLB models");
             e.printStackTrace();
 
             // Fallback to OBJ model if GLB loading fails
@@ -290,7 +307,8 @@ public class MazeRenderer {
             final ObjLoader objLoader = new ObjLoader();
             final ObjLoader.ObjLoaderParameters params = new ObjLoader.ObjLoaderParameters();
             params.flipV = true;
-            enemyModel = objLoader.loadModel(Gdx.files.internal("models/tung tung tung sahur.obj"), params);
+            enemyWalkingModel = objLoader.loadModel(Gdx.files.internal("models/tung tung tung sahur.obj"), params);
+            enemyRunningModel = enemyWalkingModel; // Use same model for both
 
             final com.badlogic.gdx.graphics.Texture enemyTexture =
                 new com.badlogic.gdx.graphics.Texture(Gdx.files.internal("models/Material.png"), true);
@@ -303,10 +321,15 @@ public class MazeRenderer {
                 com.badlogic.gdx.graphics.Texture.TextureWrap.ClampToEdge
             );
 
-            enemyInstance = new ModelInstance(enemyModel);
+            enemyWalkingInstance = new ModelInstance(enemyWalkingModel);
+            enemyRunningInstance = new ModelInstance(enemyRunningModel);
 
             final Material enemyMaterial = materialManager.createSahurMaterial(enemyTexture);
-            for (final com.badlogic.gdx.graphics.g3d.Material mat : enemyInstance.materials) {
+            for (final com.badlogic.gdx.graphics.g3d.Material mat : enemyWalkingInstance.materials) {
+                mat.clear();
+                mat.set(enemyMaterial);
+            }
+            for (final com.badlogic.gdx.graphics.g3d.Material mat : enemyRunningInstance.materials) {
                 mat.clear();
                 mat.set(enemyMaterial);
             }
@@ -975,35 +998,42 @@ public class MazeRenderer {
      * @param enemy The enemy entity
      */
     public void renderEnemy(final PerspectiveCamera camera, final Enemy enemy) {
+        // Select which model and animation controller to use based on enemy state
+        final boolean isRunning = enemy.isRunning();
+        final ModelInstance currentInstance = isRunning ? enemyRunningInstance : enemyWalkingInstance;
+        final AnimationController currentAnimController = isRunning ?
+            enemyRunningAnimationController : enemyWalkingAnimationController;
+
         // Update animation if available
-        if (enemyAnimationController != null) {
+        if (currentAnimController != null) {
             final float delta = Gdx.graphics.getDeltaTime();
             final float speedMultiplier = enemy.getAnimationSpeedMultiplier();
 
             // Update animation with speed multiplier based on AI state
             // (faster when chasing, slower when wandering)
             final float animDelta = delta * speedMultiplier;
-            enemyAnimationController.update(animDelta);
+            currentAnimController.update(animDelta);
 
             // Debug: Log animation state occasionally (every 60 frames)
             if (Gdx.graphics.getFrameId() % 60 == 0) {
-                System.out.println("[MazeRenderer] Animation update: delta=" + animDelta
-                    + ", speed=" + speedMultiplier + ", state=" + enemy.getCurrentState());
+                System.out.println("[MazeRenderer] Animation update: model=" + (isRunning ? "Running" : "Walking")
+                    + ", delta=" + animDelta + ", speed=" + speedMultiplier + ", state=" + enemy.getCurrentState());
             }
         } else {
             // Debug: Log if animation controller is missing
             if (Gdx.graphics.getFrameId() % 60 == 0) {
-                System.out.println("[MazeRenderer] WARNING: No animation controller!");
+                System.out.println("[MazeRenderer] WARNING: No animation controller for "
+                    + (isRunning ? "Running" : "Walking") + " model!");
             }
         }
 
         // Update enemy transform - IMPORTANT: order is translate -> rotate -> scale
-        enemyInstance.transform.idt(); // Reset transform
-        enemyInstance.transform.translate(enemy.getPosition());
-        enemyInstance.transform.rotate(Vector3.Y, enemy.getYaw());
+        currentInstance.transform.idt(); // Reset transform
+        currentInstance.transform.translate(enemy.getPosition());
+        currentInstance.transform.rotate(Vector3.Y, enemy.getYaw());
 
         // Use GLB-specific scale from GameConfig (adjust ENEMY_GLB_SCALE if too large/small)
-        enemyInstance.transform.scale(GameConfig.ENEMY_GLB_SCALE,
+        currentInstance.transform.scale(GameConfig.ENEMY_GLB_SCALE,
                                       GameConfig.ENEMY_GLB_SCALE,
                                       GameConfig.ENEMY_GLB_SCALE);
 
@@ -1014,7 +1044,7 @@ public class MazeRenderer {
         // Use skinnedModelBatch for proper bone animation support
         Gdx.gl.glDisable(com.badlogic.gdx.graphics.GL20.GL_DEPTH_TEST);
         skinnedModelBatch.begin(camera);
-        skinnedModelBatch.render(enemyInstance, enemyEnvironment);
+        skinnedModelBatch.render(currentInstance, enemyEnvironment);
         skinnedModelBatch.end();
         Gdx.gl.glEnable(com.badlogic.gdx.graphics.GL20.GL_DEPTH_TEST);
     }
@@ -1162,8 +1192,11 @@ public class MazeRenderer {
         if (roofModel != null) {
             roofModel.dispose();
         }
-        if (enemyModel != null) {
-            enemyModel.dispose();
+        if (enemyWalkingModel != null) {
+            enemyWalkingModel.dispose();
+        }
+        if (enemyRunningModel != null && enemyRunningModel != enemyWalkingModel) {
+            enemyRunningModel.dispose();
         }
         if (ceilingLampModel != null) {
             ceilingLampModel.dispose();

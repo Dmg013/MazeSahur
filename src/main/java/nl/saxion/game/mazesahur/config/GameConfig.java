@@ -37,6 +37,7 @@ public final class GameConfig {
     
     // Enemy settings
     public static final float ENEMY_SPEED = 4f;
+    public static final float ENEMY_SPEED_RUNNING = 15f;  // Faster speed when chasing
     public static final float ENEMY_COLLISION_RADIUS = 3.5f;
     public static final float ENEMY_CATCH_RADIUS = 2.0f;
     public static final float ENEMY_HEIGHT = 0.5f;
