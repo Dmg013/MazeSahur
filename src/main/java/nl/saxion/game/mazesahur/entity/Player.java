@@ -17,6 +17,9 @@ public class Player {
 
     private final Vector3 position;
     private final Vector3 velocity;
+    private boolean boostActive;
+    private float boostTimer;
+    private float boostSpeedMultiplier;
 
     /**
      * Creates a new player at the specified position.
@@ -26,6 +29,9 @@ public class Player {
     public Player(final Vector3 startPosition) {
         this.position = new Vector3(startPosition);
         this.velocity = new Vector3();
+        this.boostActive = false;
+        this.boostTimer = 0f;
+        this.boostSpeedMultiplier = 1.0f;
     }
 
     /**
@@ -35,8 +41,9 @@ public class Player {
      * @param delta Time since last frame
      */
     public void move(final Vector3 direction, final float delta) {
-        // Calculate movement vector
-        final Vector3 movement = direction.cpy().scl(GameConfig.PLAYER_MOVE_SPEED * delta);
+        // Calculate movement vector with boost multiplier
+        final float effectiveSpeed = GameConfig.PLAYER_MOVE_SPEED * boostSpeedMultiplier;
+        final Vector3 movement = direction.cpy().scl(effectiveSpeed * delta);
         velocity.set(movement);
     }
 
@@ -47,6 +54,16 @@ public class Player {
      * @param maze The maze for collision detection
      */
     public void update(final float delta, final Maze maze) {
+        // Update boost timer
+        if (boostActive) {
+            boostTimer -= delta;
+            if (boostTimer <= 0f) {
+                boostActive = false;
+                boostTimer = 0f;
+                boostSpeedMultiplier = 1.0f;
+            }
+        }
+
         // Don't apply movement here - it's already applied in GameScreen.handleInput
         // Just clear velocity for next frame
         velocity.set(0, 0, 0);
@@ -126,6 +143,45 @@ public class Player {
      */
     public static float getHeight() {
         return GameConfig.PLAYER_HEIGHT;
+    }
+
+    /**
+     * Activates a speed boost for the player.
+     *
+     * @param duration Boost duration in seconds
+     * @param multiplier Speed multiplier
+     */
+    public void activateBoost(final float duration, final float multiplier) {
+        this.boostActive = true;
+        this.boostTimer = duration;
+        this.boostSpeedMultiplier = multiplier;
+    }
+
+    /**
+     * Checks if the player currently has an active boost.
+     *
+     * @return true if boost is active
+     */
+    public boolean isBoostActive() {
+        return boostActive;
+    }
+
+    /**
+     * Gets the remaining boost time.
+     *
+     * @return Remaining boost time in seconds
+     */
+    public float getBoostTimeRemaining() {
+        return boostTimer;
+    }
+
+    /**
+     * Gets the current speed multiplier.
+     *
+     * @return Speed multiplier
+     */
+    public float getSpeedMultiplier() {
+        return boostSpeedMultiplier;
     }
 
     /**
