@@ -17,6 +17,7 @@ public class Player {
 
     private final Vector3 position;
     private final Vector3 velocity;
+    private boolean isSprinting;
 
     /**
      * Creates a new player at the specified position.
@@ -26,6 +27,7 @@ public class Player {
     public Player(final Vector3 startPosition) {
         this.position = new Vector3(startPosition);
         this.velocity = new Vector3();
+        this.isSprinting = false;
     }
 
     /**
@@ -135,6 +137,24 @@ public class Player {
      */
     public static float getCollisionRadius() {
         return GameConfig.PLAYER_COLLISION_RADIUS;
+    }
+
+    /**
+     * Sets whether the player is sprinting.
+     *
+     * @param sprinting True if sprinting, false otherwise
+     */
+    public void setSprinting(final boolean sprinting) {
+        this.isSprinting = sprinting;
+    }
+
+    /**
+     * Checks if the player is currently sprinting.
+     *
+     * @return True if sprinting
+     */
+    public boolean isSprinting() {
+        return isSprinting;
     }
 }
 
