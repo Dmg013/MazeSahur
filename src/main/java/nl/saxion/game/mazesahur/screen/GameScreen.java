@@ -273,193 +273,49 @@ public class GameScreen extends ScalableGameScreen {
     }
 
     /**
-     * Creates an elevator in a guaranteed open space in the maze.
-     * Ensures the elevator doesn't spawn in walls.
-     * FOR TESTING: Spawns VERY CLOSE to player spawn position.
+     * Creates an elevator using the maze's guaranteed position finder.
+     * The maze will find a suitable wall and prepare it for the elevator.
      */
     private Elevator createElevatorInOpenSpace() {
         // Player spawns at (12, 3, 12) world coordinates
-        // Place elevator integrated into wall - 3 cells in front
-        final float elevatorX = 12f; // Same X as player
-        final float elevatorZ = 12f + (3 * Maze.CELL_SIZE); // 3 cells in front (+Z)
+        final float playerX = 12f;
+        final float playerZ = 12f;
 
-        // Convert to grid coordinates
-        final int[] gridPos = maze.worldToGrid(elevatorX, elevatorZ);
-        final int gridX = gridPos[0];
-        final int gridZ = gridPos[1];
+        final int playerGridX = (int) Math.floor(playerX / Maze.CELL_SIZE);
+        final int playerGridZ = (int) Math.floor(playerZ / Maze.CELL_SIZE);
 
-        // Create opening in maze walls for elevator (2x2 cells to ensure enough space)
-        maze.createOpening(gridX, gridZ, 2, 2);
+        // Let the maze find and prepare a guaranteed elevator position
+        final int[] elevatorInfo = maze.findAndPrepareElevatorPosition(playerGridX, playerGridZ);
 
-        System.out.println("[GameScreen] ===== ELEVATOR SPAWN DEBUG (INTEGRATED INTO WALL) =====");
-        System.out.println("[GameScreen] Player spawn: (12, 3, 12)");
-        System.out.println("[GameScreen] Elevator world pos: (" + elevatorX + ", 0, " + elevatorZ + ")");
-        System.out.println("[GameScreen] Elevator grid pos: (" + gridX + ", " + gridZ + ")");
-        System.out.println("[GameScreen] Created 2x2 opening in maze walls");
-        System.out.println("[GameScreen] Distance from player: " + (3 * Maze.CELL_SIZE) + " units (3 cells)");
-        System.out.println("[GameScreen] ==================================================");
+        // Extract position info
+        final int wallX = elevatorInfo[0];
+        final int wallZ = elevatorInfo[1];
+        final int openX = elevatorInfo[2];
+        final int openZ = elevatorInfo[3];
+        final int direction = elevatorInfo[4];
+
+        // Convert wall position to world coordinates
+        final float[] wallWorldPos = maze.gridToWorld(wallX, wallZ);
+        final float elevatorX = wallWorldPos[0];
+        final float elevatorZ = wallWorldPos[1];
+
+        // Direction names for debug
+        final String[] dirNames = {"North (wall is North)", "East (wall is East)",
+                                   "South (wall is South)", "West (wall is West)"};
+
+        System.out.println("[GameScreen] ===== ELEVATOR SPAWN =====");
+        System.out.println("[GameScreen] Player spawn: (" + playerX + ", " + playerZ + ")");
+        System.out.println("[GameScreen] Elevator grid (IN WALL): (" + wallX + ", " + wallZ + ")");
+        System.out.println("[GameScreen] Elevator world: (" + elevatorX + ", " + elevatorZ + ")");
+        System.out.println("[GameScreen] Open space grid: (" + openX + ", " + openZ + ")");
+        System.out.println("[GameScreen] Door faces: " + dirNames[direction]);
+        System.out.println("[GameScreen] ===========================");
 
         return new Elevator(maze, elevatorX, elevatorZ);
-
-        /* OLD CODE - Disabled for testing
-        // Convert to grid coordinates
-        final int playerGridX = (int) (12f / Maze.CELL_SIZE);
-        final int playerGridZ = (int) (12f / Maze.CELL_SIZE);
-
-        // Try positions around player spawn (spiral pattern)
-        final int[][] offsets = {
-            {0, 4}, {0, 5}, {0, 6},  // In front of player
-            {4, 0}, {5, 0}, {6, 0},  // To the right
-            {-4, 0}, {-5, 0}, {-6, 0}, // To the left
-            {0, -4}, {0, -5}, {0, -6}, // Behind player
-            {4, 4}, {-4, 4}, {4, -4}, {-4, -4}, // Diagonals
-            {3, 3}, {-3, 3}, {3, -3}, {-3, -3}  // Closer diagonals
-        };
-
-        */ // End of old code comment
-
-        /* ORIGINAL SEARCH CODE - Commented out for testing
-        for (final int[] offset : offsets) {
-            final int x = playerGridX + offset[0];
-            final int z = playerGridZ + offset[1];
-
-            // Check bounds
-            if (x < 2 || x >= maze.getWidth() - 2 || z < 2 || z >= maze.getHeight() - 2) {
-                continue;
-            }
-
-            // Check if this position and surrounding area is open (5x5 grid for extra safety)
-            boolean isAreaOpen = true;
-            for (int dz = -2; dz <= 2; dz++) {
-                for (int dx = -2; dx <= 2; dx++) {
-                    final int checkX = x + dx;
-                    final int checkZ = z + dz;
-                    // Check bounds
-                    if (checkX < 0 || checkX >= maze.getWidth() || checkZ < 0 || checkZ >= maze.getHeight()) {
-                        isAreaOpen = false;
-                        break;
-                    }
-                    if (maze.isWall(checkX, checkZ)) {
-                        isAreaOpen = false;
-                        break;
-                    }
-                }
-                if (!isAreaOpen) break;
-            }
-
-            // CRITICAL: Check extra space in all 4 directions for the door (door can face any direction)
-            // The door extends 2-3 cells from the elevator center
-            boolean doorSpaceClear = true;
-            if (isAreaOpen) {
-                // Check North (-Z direction) - 3 extra cells
-                for (int extraZ = -3; extraZ <= -3; extraZ--) {
-                    final int checkZ = z + extraZ;
-                    if (checkZ < 0 || checkZ >= maze.getHeight() || maze.isWall(x, checkZ)) {
-                        doorSpaceClear = false;
-                        break;
-                    }
-                }
-
-                // Check South (+Z direction) - 3 extra cells
-                if (doorSpaceClear) {
-                    for (int extraZ = 3; extraZ <= 3; extraZ++) {
-                        final int checkZ = z + extraZ;
-                        if (checkZ >= maze.getHeight() || maze.isWall(x, checkZ)) {
-                            doorSpaceClear = false;
-                            break;
-                        }
-                    }
-                }
-
-                // Check East (+X direction) - 3 extra cells
-                if (doorSpaceClear) {
-                    for (int extraX = 3; extraX <= 3; extraX++) {
-                        final int checkX = x + extraX;
-                        if (checkX >= maze.getWidth() || maze.isWall(checkX, z)) {
-                            doorSpaceClear = false;
-                            break;
-                        }
-                    }
-                }
-
-                // Check West (-X direction) - 3 extra cells
-                if (doorSpaceClear) {
-                    for (int extraX = -3; extraX <= -3; extraX--) {
-                        final int checkX = x + extraX;
-                        if (checkX < 0 || maze.isWall(checkX, z)) {
-                            doorSpaceClear = false;
-                            break;
-                        }
-                    }
-                }
-            }
-
-            // If we found a good spot with door space clear, place elevator here
-            if (isAreaOpen && doorSpaceClear) {
-                final float elevatorX = x * Maze.CELL_SIZE + Maze.CELL_SIZE / 2f;
-                // Offset elevator backwards (towards -Z) so door has more clearance in front
-                final float elevatorZ = z * Maze.CELL_SIZE + Maze.CELL_SIZE / 2f - 2.0f; // 2 units back
-                System.out.println("[GameScreen] ===== ELEVATOR SPAWN DEBUG =====");
-                System.out.println("[GameScreen] Elevator spawned near player at grid (" + x + ", " + z + ")");
-                System.out.println("[GameScreen] World position: (" + elevatorX + ", " + elevatorZ + ") - offset back 2 units");
-                System.out.println("[GameScreen] 5x5 area checked + extra door clearance in all 4 directions");
-                System.out.println("[GameScreen] ================================");
-                return new Elevator(maze, elevatorX, elevatorZ);
-            }
-        }
-
-        // Fallback: search entire maze for a 5x5 open area with door clearance
-        System.out.println("[GameScreen] No suitable spot near player, searching entire maze...");
-        for (int z = 4; z < maze.getHeight() - 4; z++) {
-            for (int x = 4; x < maze.getWidth() - 4; x++) {
-                // Check 5x5 area
-                boolean isAreaOpen = true;
-                for (int dz = -2; dz <= 2; dz++) {
-                    for (int dx = -2; dx <= 2; dx++) {
-                        if (maze.isWall(x + dx, z + dz)) {
-                            isAreaOpen = false;
-                            break;
-                        }
-                    }
-                    if (!isAreaOpen) break;
-                }
-
-                // Check extra door space in all 4 directions
-                boolean doorSpaceClear = true;
-                if (isAreaOpen) {
-                    // North
-                    if (maze.isWall(x, z - 3)) doorSpaceClear = false;
-                    // South
-                    if (doorSpaceClear && maze.isWall(x, z + 3)) doorSpaceClear = false;
-                    // East
-                    if (doorSpaceClear && maze.isWall(x + 3, z)) doorSpaceClear = false;
-                    // West
-                    if (doorSpaceClear && maze.isWall(x - 3, z)) doorSpaceClear = false;
-                }
-
-                if (isAreaOpen && doorSpaceClear) {
-                    final float elevatorX = x * Maze.CELL_SIZE + Maze.CELL_SIZE / 2f;
-                    // Offset elevator backwards (towards -Z) so door has more clearance in front
-                    final float elevatorZ = z * Maze.CELL_SIZE + Maze.CELL_SIZE / 2f - 2.0f; // 2 units back
-                    System.out.println("[GameScreen] ===== ELEVATOR SPAWN DEBUG =====");
-                    System.out.println("[GameScreen] Elevator spawned at grid (" + x + ", " + z + ")");
-                    System.out.println("[GameScreen] World position: (" + elevatorX + ", " + elevatorZ + ") - offset back 2 units");
-                    System.out.println("[GameScreen] 5x5 area checked + door clearance (fallback search)");
-                    System.out.println("[GameScreen] ================================");
-                    return new Elevator(maze, elevatorX, elevatorZ);
-                }
-            }
-        }
-
-        // Last resort fallback
-        final float fallbackX = (maze.getWidth() / 2) * Maze.CELL_SIZE + Maze.CELL_SIZE / 2f;
-        final float fallbackZ = (maze.getHeight() / 2) * Maze.CELL_SIZE + Maze.CELL_SIZE / 2f - 2.0f; // Offset back
-        System.out.println("[GameScreen] Elevator spawned at center (last resort fallback) - offset back 2 units");
-        return new Elevator(maze, fallbackX, fallbackZ);
-        */ // End of commented fallback code
     }
 
     /**
+     * Checks collision at the specified world position.
      * Checks collision with maze walls and elevator using circular collision detection.
      */
     private boolean checkCollision(final Vector3 position) {
@@ -503,6 +359,12 @@ public class GameScreen extends ScalableGameScreen {
         if (elevator.blocksPosition(position)) {
             return true;
         }
+
+        // TODO: Re-enable door frame collision after testing spawn position
+        // Check collision with elevator door frame (walls beside the door)
+        // if (elevator.collidesWithDoorFrame(position, GameConfig.PLAYER_COLLISION_RADIUS)) {
+        //     return true;
+        // }
 
         return false;
     }

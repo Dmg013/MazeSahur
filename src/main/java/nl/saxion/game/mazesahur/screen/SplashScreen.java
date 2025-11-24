@@ -11,7 +11,6 @@ import com.badlogic.gdx.utils.Align;
 import nl.saxion.gameapp.GameApp;
 import nl.saxion.gameapp.screens.ScalableGameScreen;
 
-import java.util.concurrent.CompletableFuture;
 
 /**
  * Splash screen with loading bar and progress text.
@@ -34,24 +33,19 @@ public class SplashScreen extends ScalableGameScreen {
 
     // Loading stages
     private static final String[] LOADING_STAGES = {
-        "Initializing game...",
-        "Loading textures...",
-        "Compiling shaders...",
-        "Building maze...",
-        "Loading enemy AI...",
+        "Initializing...",
+        "Loading resources...",
+        "Preparing menu...",
         "Finalizing..."
     };
 
-    private float loadingProgress = 0.0f;
     private volatile int currentStage = 0;
     private float stageTimer = 0.0f;
-    private float minimumDisplayTime = 3.0f; // Minimum 3 seconds display
+    private static final float MINIMUM_DISPLAY_TIME = 2.0f; // Minimum 2 seconds display
     private float elapsedTime = 0.0f;
-    private volatile boolean gameLoaded = false;
+    private volatile boolean menuLoaded = false;
     private boolean readyToTransition = false;
     private boolean transitionStarted = false;
-    private GameScreen gameScreen;
-    private CompletableFuture<Void> loadingTask;
 
     /**
      * Creates a new splash screen.
@@ -97,9 +91,6 @@ public class SplashScreen extends ScalableGameScreen {
             }
 
             // Center window on screen
-            com.badlogic.gdx.Graphics.DisplayMode displayMode = Gdx.graphics.getDisplayMode();
-            int posX = (displayMode.width - 900) / 2;
-            int posY = (displayMode.height - 500) / 2;
             Gdx.graphics.setWindowedMode(900, 500);
 
             System.out.println("[SplashScreen] Window set to borderless and centered");
@@ -116,70 +107,52 @@ public class SplashScreen extends ScalableGameScreen {
         elapsedTime += delta;
         stageTimer += delta;
 
-        // Load game screen incrementally on render thread (ACTUAL LOADING)
-        if (!gameLoaded) {
-            // Auto-progress through stages (no delay, as fast as possible)
+        // Progress through loading stages
+        if (!menuLoaded) {
+            // Auto-progress through stages
             if (currentStage == 0) {
-                // Stage 0: Initializing game
                 System.out.println("[SplashScreen] Stage 0: Initializing...");
                 currentStage = 1;
                 stageTimer = 0.0f;
-            } else if (currentStage == 1 && stageTimer > 0.1f) {
-                // Stage 1: Creating GameScreen (this is the heavy part)
-                System.out.println("[SplashScreen] Stage 1: Creating GameScreen...");
-                gameScreen = new GameScreen();
-                System.out.println("[SplashScreen] GameScreen created");
+            } else if (currentStage == 1 && stageTimer > 0.3f) {
+                System.out.println("[SplashScreen] Stage 1: Loading resources...");
                 currentStage = 2;
                 stageTimer = 0.0f;
-            } else if (currentStage == 2 && stageTimer > 0.1f && gameScreen != null) {
-                // Stage 2: Initializing GameScreen (show() calls heavy loading)
-                System.out.println("[SplashScreen] Stage 2: Initializing GameScreen...");
-                gameScreen.show();
-                System.out.println("[SplashScreen] GameScreen initialized");
+            } else if (currentStage == 2 && stageTimer > 0.3f) {
+                System.out.println("[SplashScreen] Stage 2: Preparing menu...");
                 currentStage = 3;
                 stageTimer = 0.0f;
-            } else if (currentStage == 3 && stageTimer > 0.1f) {
-                // Stage 3: Building maze (already done in show())
-                System.out.println("[SplashScreen] Stage 3: Maze built");
-                currentStage = 4;
-                stageTimer = 0.0f;
-            } else if (currentStage == 4 && stageTimer > 0.1f) {
-                // Stage 4: Loading enemy AI (already done in show())
-                System.out.println("[SplashScreen] Stage 4: Enemy AI loaded");
-                currentStage = 5;
-                stageTimer = 0.0f;
-            } else if (currentStage == 5 && stageTimer > 0.1f) {
-                // Stage 5: Finalizing
-                System.out.println("[SplashScreen] Stage 5: Finalizing");
-                gameLoaded = true;
+            } else if (currentStage == 3 && stageTimer > 0.3f) {
+                System.out.println("[SplashScreen] Stage 3: Finalizing");
+                menuLoaded = true;
             }
         }
 
         // Calculate progress based on current stage
-        loadingProgress = (float) (currentStage + 1) / LOADING_STAGES.length;
+        float loadingProgress = (float) (currentStage + 1) / LOADING_STAGES.length;
 
-        // Check if we can transition (minimum display time + game loaded)
-        if (elapsedTime >= minimumDisplayTime && gameLoaded && gameScreen != null) {
+        // Check if we can transition (minimum display time + menu loaded)
+        if (elapsedTime >= MINIMUM_DISPLAY_TIME && menuLoaded) {
             readyToTransition = true;
         }
 
-        // Transition to game (delayed to avoid OpenGL context issues)
+        // Transition to menu
         if (readyToTransition && !transitionStarted) {
             transitionStarted = true;
-            System.out.println("[SplashScreen] Loading complete, scheduling transition...");
+            System.out.println("[SplashScreen] Loading complete, transitioning to menu...");
 
-            // Add the loaded game screen
-            GameApp.addScreen("MazeGame", gameScreen);
-
-            // Schedule transition on next frame to avoid OpenGL crashes
+            // Schedule transition on next frame
             Gdx.app.postRunnable(() -> {
                 System.out.println("[SplashScreen] Executing transition...");
-                // Restore window decorations and resize for game
+                // Restore window decorations and resize for menu
                 Gdx.graphics.setUndecorated(false);
                 Gdx.graphics.setWindowedMode(1280, 720);
 
-                // Switch screen
-                GameApp.switchScreen("MazeGame");
+                // Create and add menu screen
+                GameApp.addScreen("Menu", new MenuScreen());
+
+                // Switch to menu screen
+                GameApp.switchScreen("Menu");
             });
         }
 

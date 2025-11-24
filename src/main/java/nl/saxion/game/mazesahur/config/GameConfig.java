@@ -24,8 +24,8 @@ public final class GameConfig {
     // Player settings
     public static final float PLAYER_MOVE_SPEED = 12f;
     public static final float PLAYER_HEIGHT = 3f;
-    public static final float PLAYER_COLLISION_RADIUS = 2.5f;
-    
+    public static final float PLAYER_COLLISION_RADIUS = 0.4f; // Small radius so player can get close to walls
+
     // Input settings
     public static final float MOUSE_SENSITIVITY = 0.2f;
     public static final float MAX_PITCH = 89f;
