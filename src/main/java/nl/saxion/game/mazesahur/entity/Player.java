@@ -17,6 +17,8 @@ public class Player {
 
     private final Vector3 position;
     private final Vector3 velocity;
+    private float energy; // Energy for running (0.0 to 1.0)
+    private boolean isRunning; // Whether player is currently running
 
     /**
      * Creates a new player at the specified position.
@@ -26,6 +28,8 @@ public class Player {
     public Player(final Vector3 startPosition) {
         this.position = new Vector3(startPosition);
         this.velocity = new Vector3();
+        this.energy = 1.0f; // Start with full energy
+        this.isRunning = false;
     }
 
     /**
@@ -33,10 +37,11 @@ public class Player {
      *
      * @param direction Normalized movement direction
      * @param delta Time since last frame
+     * @param speed Current movement speed
      */
-    public void move(final Vector3 direction, final float delta) {
+    public void move(final Vector3 direction, final float delta, final float speed) {
         // Calculate movement vector
-        final Vector3 movement = direction.cpy().scl(GameConfig.PLAYER_MOVE_SPEED * delta);
+        final Vector3 movement = direction.cpy().scl(speed * delta);
         velocity.set(movement);
     }
 
@@ -47,9 +52,62 @@ public class Player {
      * @param maze The maze for collision detection
      */
     public void update(final float delta, final Maze maze) {
+        // Regenerate energy when not running
+        if (!isRunning && energy < 1.0f) {
+            energy += GameConfig.ENERGY_REGEN_RATE * delta;
+            if (energy > 1.0f) {
+                energy = 1.0f;
+            }
+        }
+
         // Don't apply movement here - it's already applied in GameScreen.handleInput
         // Just clear velocity for next frame
         velocity.set(0, 0, 0);
+    }
+
+    /**
+     * Drains energy while running.
+     *
+     * @param delta Time since last frame
+     */
+    public void drainEnergy(final float delta) {
+        energy -= GameConfig.ENERGY_DRAIN_RATE * delta;
+        if (energy < 0.0f) {
+            energy = 0.0f;
+        }
+    }
+
+    /**
+     * Sets the running state of the player.
+     *
+     * @param running Whether the player is running
+     */
+    public void setRunning(final boolean running) {
+        this.isRunning = running;
+    }
+
+    /**
+     * Gets the current energy level.
+     *
+     * @return Energy level (0.0 to 1.0)
+     */
+    public float getEnergy() {
+        return energy;
+    }
+
+    /**
+     * Calculates the current movement speed based on energy level.
+     *
+     * @return Current speed multiplier
+     */
+    public float getCurrentSpeedMultiplier() {
+        if (isRunning) {
+            // Speed decreases as energy depletes
+            // At full energy: RUN_SPEED_MULTIPLIER (e.g. 1.5x speed)
+            // At 0 energy: 1.0x speed (normal walk)
+            return 1.0f + (energy * (GameConfig.RUN_SPEED_MULTIPLIER - 1.0f));
+        }
+        return 1.0f; // Normal walking speed
     }
 
     /**

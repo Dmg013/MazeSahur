@@ -26,6 +26,11 @@ public final class GameConfig {
     public static final float PLAYER_HEIGHT = 3f;
     public static final float PLAYER_COLLISION_RADIUS = 0.4f; // Small radius so player can get close to walls
 
+    // Energy system
+    public static final float ENERGY_DRAIN_RATE = 0.08f; // Energy drain per second while running
+    public static final float ENERGY_REGEN_RATE = 0.25f; // Energy regen per second while walking
+    public static final float RUN_SPEED_MULTIPLIER = 1.5f; // Maximum run speed multiplier at full energy
+
     // Input settings
     public static final float MOUSE_SENSITIVITY = 0.2f;
     public static final float MAX_PITCH = 89f;

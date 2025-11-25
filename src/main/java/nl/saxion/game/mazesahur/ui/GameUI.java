@@ -1,5 +1,9 @@
 package nl.saxion.game.mazesahur.ui;
 
+import com.badlogic.gdx.Gdx;
+import com.badlogic.gdx.graphics.Color;
+import com.badlogic.gdx.graphics.GL20;
+import com.badlogic.gdx.graphics.glutils.ShapeRenderer;
 import nl.saxion.game.mazesahur.config.GameConfig;
 import nl.saxion.game.mazesahur.entity.Enemy;
 import nl.saxion.game.mazesahur.entity.Player;
@@ -20,12 +24,20 @@ public class GameUI {
     private static final String FONT_NAME = "gameUI";
     private static final int FONT_SIZE = 24;
 
+    // Energy bar dimensions
+    private static final float ENERGY_BAR_WIDTH = 300f;
+    private static final float ENERGY_BAR_HEIGHT = 30f;
+    private static final float ENERGY_BAR_MARGIN = 20f;
+
+    private ShapeRenderer shapeRenderer;
+
     /**
      * Init
      */
     public void initialize() {
         System.out.println("[GameUI] Initializing UI and loading font...");
         GameApp.addFont(FONT_NAME, "fonts/basic.ttf", FONT_SIZE);
+        shapeRenderer = new ShapeRenderer();
         System.out.println("[GameUI] Font loaded: " + FONT_NAME);
     }
 
@@ -48,17 +60,21 @@ public class GameUI {
             com.badlogic.gdx.graphics.GL20.GL_ONE_MINUS_SRC_ALPHA
         );
 
-        GameApp.startSpriteRendering();
-
-        // Use actual window height - but remember GameApp uses different coordinate system
+        // Use actual window dimensions
+        final int screenWidth = com.badlogic.gdx.Gdx.graphics.getWidth();
         final int screenHeight = com.badlogic.gdx.Gdx.graphics.getHeight();
+
+        // Draw energy bar at bottom center
+        drawEnergyBar(player.getEnergy(), screenWidth, screenHeight);
+
+        GameApp.startSpriteRendering();
 
         // Title (at top)
         GameApp.drawText(FONT_NAME, "MazeSahur - Horror Maze Game",
             20, 20, "white");
 
         // Controls
-        GameApp.drawText(FONT_NAME, "WASD: Move | Mouse: Look | F: Flashlight | ESC: Exit",
+        GameApp.drawText(FONT_NAME, "WASD: Move | Shift: Run | Mouse: Look | F: Flashlight | ESC: Exit",
             20, 50, "white");
 
         // Flashlight status
@@ -108,10 +124,72 @@ public class GameUI {
     }
 
     /**
+     * Draws the energy bar at the bottom center of the screen.
+     *
+     * @param energy Energy level (0.0 to 1.0)
+     * @param screenWidth Screen width in pixels
+     * @param screenHeight Screen height in pixels
+     */
+    private void drawEnergyBar(final float energy, final int screenWidth, final int screenHeight) {
+        // Calculate position (bottom center)
+        final float barX = (screenWidth - ENERGY_BAR_WIDTH) / 2f;
+        final float barY = ENERGY_BAR_MARGIN;
+
+        // Enable blending for smooth colors
+        Gdx.gl.glEnable(GL20.GL_BLEND);
+        Gdx.gl.glBlendFunc(GL20.GL_SRC_ALPHA, GL20.GL_ONE_MINUS_SRC_ALPHA);
+
+        shapeRenderer.begin(ShapeRenderer.ShapeType.Filled);
+
+        // Draw background (dark gray)
+        shapeRenderer.setColor(0.2f, 0.2f, 0.2f, 0.8f);
+        shapeRenderer.rect(barX, barY, ENERGY_BAR_WIDTH, ENERGY_BAR_HEIGHT);
+
+        // Draw energy fill with color gradient based on energy level
+        final Color energyColor = getEnergyColor(energy);
+        shapeRenderer.setColor(energyColor);
+        shapeRenderer.rect(barX, barY, ENERGY_BAR_WIDTH * energy, ENERGY_BAR_HEIGHT);
+
+        shapeRenderer.end();
+
+        // Draw border
+        shapeRenderer.begin(ShapeRenderer.ShapeType.Line);
+        Gdx.gl.glLineWidth(2f);
+        shapeRenderer.setColor(0.5f, 0.5f, 0.5f, 1.0f);
+        shapeRenderer.rect(barX, barY, ENERGY_BAR_WIDTH, ENERGY_BAR_HEIGHT);
+        shapeRenderer.end();
+    }
+
+    /**
+     * Gets the color for the energy bar based on current energy level.
+     *
+     * @param energy Energy level (0.0 to 1.0)
+     * @return Color for the energy bar
+     */
+    private Color getEnergyColor(final float energy) {
+        if (energy > 0.5f) {
+            // Green to yellow (high energy)
+            final float t = (1.0f - energy) * 2f;
+            return new Color(t, 1.0f, 0.0f, 0.9f);
+        } else if (energy > 0.25f) {
+            // Yellow to orange (medium energy)
+            final float t = (0.5f - energy) * 4f;
+            return new Color(1.0f, 1.0f - t * 0.5f, 0.0f, 0.9f);
+        } else {
+            // Orange to red (low energy)
+            final float t = (0.25f - energy) * 4f;
+            return new Color(1.0f, 0.5f - t * 0.5f, 0.0f, 0.9f);
+        }
+    }
+
+    /**
      * Disposes UI resources.
      */
     public void dispose() {
         GameApp.disposeFont(FONT_NAME);
+        if (shapeRenderer != null) {
+            shapeRenderer.dispose();
+        }
     }
 }
 

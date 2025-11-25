@@ -2,6 +2,7 @@ package nl.saxion.game.mazesahur.screen;
 
 import com.badlogic.gdx.Gdx;
 import com.badlogic.gdx.Input;
+import com.badlogic.gdx.audio.Sound;
 import com.badlogic.gdx.graphics.GL20;
 import com.badlogic.gdx.graphics.PerspectiveCamera;
 import com.badlogic.gdx.math.Vector3;
@@ -40,6 +41,9 @@ public class GameScreen extends ScalableGameScreen {
 
     // UI
     private GameUI gameUI;
+
+    // Audio
+    private Sound flashlightToggleSound;
 
     // Camera control
     private float yaw;
@@ -125,6 +129,9 @@ public class GameScreen extends ScalableGameScreen {
         // Initialize UI
         gameUI = new GameUI();
         gameUI.initialize();
+
+        // Load audio
+        flashlightToggleSound = Gdx.audio.newSound(Gdx.files.internal("audio/light-switch-81967.mp3"));
 
         // Capture cursor for FPS controls
         Gdx.input.setCursorCatched(true);
@@ -245,9 +252,26 @@ public class GameScreen extends ScalableGameScreen {
             moveDirection.add(right);
         }
 
+        // Check if player is trying to run (Shift key)
+        final boolean tryingToRun = Gdx.input.isKeyPressed(Input.Keys.SHIFT_LEFT)
+                                     || Gdx.input.isKeyPressed(Input.Keys.SHIFT_RIGHT);
+
+        // Can only run if moving and has energy
+        final boolean canRun = moveDirection.len() > 0 && tryingToRun && player.getEnergy() > 0.0f;
+        player.setRunning(canRun);
+
+        // Drain energy while running
+        if (canRun) {
+            player.drainEnergy(delta);
+        }
+
         // Apply movement with collision detection
         if (moveDirection.len() > 0) {
-            moveDirection.nor().scl(GameConfig.PLAYER_MOVE_SPEED * delta);
+            // Calculate speed based on energy level
+            final float speedMultiplier = player.getCurrentSpeedMultiplier();
+            final float currentSpeed = GameConfig.PLAYER_MOVE_SPEED * speedMultiplier;
+
+            moveDirection.nor().scl(currentSpeed * delta);
 
             // Try full movement first
             final Vector3 newPosition = player.getPosition().cpy().add(moveDirection);
@@ -376,6 +400,10 @@ public class GameScreen extends ScalableGameScreen {
         // Toggle flashlight
         if (Gdx.input.isKeyJustPressed(Input.Keys.F)) {
             lightingManager.toggleFlashlight();
+            // Play light switch sound
+            if (flashlightToggleSound != null) {
+                flashlightToggleSound.play(0.7f); // Volume at 70%
+            }
         }
 
         // Toggle rail network visualization (debug)
@@ -569,6 +597,9 @@ public class GameScreen extends ScalableGameScreen {
         mazeRenderer.dispose();
         materialManager.dispose();
         lightingManager.dispose();
+        if (flashlightToggleSound != null) {
+            flashlightToggleSound.dispose();
+        }
     }
 
     @Override
