@@ -79,10 +79,22 @@ public class GameScreen extends ScalableGameScreen {
      * Creates a new game screen with default settings.
      */
     public GameScreen() {
+        this(null);
+    }
+
+    /**
+     * Creates a new game screen with an optional deterministic maze seed.
+     * Passing a seed allows server/client to share the exact same layout.
+     *
+     * @param mazeSeed Seed to use for maze generation (null = random)
+     */
+    public GameScreen(final Long mazeSeed) {
         super(1280, 720);
 
+        final long seed = mazeSeed != null ? mazeSeed : System.currentTimeMillis();
+
         // Initialize world
-        maze = new Maze(25, 25);
+        maze = new Maze(25, 25, seed);
         maze.generate();
 
         // Initialize entities
@@ -102,6 +114,8 @@ public class GameScreen extends ScalableGameScreen {
         yaw = 0;
         pitch = 0;
         firstMouse = true;
+
+        System.out.println("[GameScreen] Using maze seed: " + seed);
     }
 
     @Override
@@ -770,4 +784,3 @@ public class GameScreen extends ScalableGameScreen {
         hide();
     }
 }
-

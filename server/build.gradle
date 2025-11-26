@@ -1,0 +1,27 @@
+plugins {
+    id 'java'
+    id 'application'
+}
+
+group = 'nl.saxion.game.mazesahur'
+version = '0.0.1-SNAPSHOT'
+
+repositories {
+    mavenCentral()
+    maven { url 'https://jitpack.io' }
+}
+
+dependencies {
+    implementation 'io.netty:netty-all:4.1.109.Final'
+    implementation project(':') // reuse maze/enemy/world logic from main project
+}
+
+application {
+    mainClass = 'nl.saxion.game.mazesahur.server.ServerMain'
+}
+
+java {
+    toolchain {
+        languageVersion = JavaLanguageVersion.of(21)
+    }
+}

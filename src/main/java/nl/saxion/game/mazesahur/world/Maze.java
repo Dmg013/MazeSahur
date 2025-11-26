@@ -15,6 +15,7 @@ public class Maze {
 
     private final int width;
     private final int height;
+    private final long seed;
     private final MazeGenerator generator;
     private boolean[][] walls;
 
@@ -25,9 +26,22 @@ public class Maze {
      * @param height Maze height in cells
      */
     public Maze(final int width, final int height) {
+        this(width, height, System.currentTimeMillis());
+    }
+
+    /**
+     * Creates a new maze with the specified dimensions and seed.
+     * Use this when maze layout must be deterministic (e.g. multiplayer).
+     *
+     * @param width Maze width in cells
+     * @param height Maze height in cells
+     * @param seed Random seed for generation
+     */
+    public Maze(final int width, final int height, final long seed) {
         this.width = width;
         this.height = height;
-        this.generator = new MazeGenerator(width, height, System.currentTimeMillis());
+        this.seed = seed;
+        this.generator = new MazeGenerator(width, height, seed);
     }
 
     /**
@@ -68,6 +82,15 @@ public class Maze {
      */
     public int getHeight() {
         return height;
+    }
+
+    /**
+     * Gets the seed used for this maze generation.
+     *
+     * @return Seed value
+     */
+    public long getSeed() {
+        return seed;
     }
 
     /**
@@ -207,4 +230,3 @@ public class Maze {
         return new int[] {fallbackX, fallbackZ, fallbackX, fallbackZ + 1, 0};
     }
 }
-
