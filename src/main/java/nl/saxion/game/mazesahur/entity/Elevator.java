@@ -39,6 +39,10 @@ public class Elevator {
     private static final float ELEVATOR_DEPTH = 3.0f;
     private static final float ELEVATOR_HEIGHT = 4.0f;
 
+    // Door frame collision zones (walls beside the door)
+    private static final float DOOR_WIDTH = 2.5f; // Width of the actual door opening
+    private static final float WALL_THICKNESS = 0.3f; // Thickness of wall segments beside door
+
     /**
      * Creates a new elevator entity.
      *
@@ -198,6 +202,85 @@ public class Elevator {
                 System.out.println("[Elevator] Manual open triggered (during closing)");
                 break;
         }
+    }
+
+    /**
+     * Checks if a position collides with the elevator's door frame walls.
+     * The door frame consists of walls on both sides of the door opening.
+     * This prevents players from walking through the walls beside the door.
+     *
+     * @param testPosition Position to test
+     * @param playerRadius Collision radius of the player
+     * @return True if position collides with door frame
+     */
+    public boolean collidesWithDoorFrame(final Vector3 testPosition, final float playerRadius) {
+        // The elevator door faces +X direction (out from elevator)
+        // Visual wall segments are at: elevator.x + 0.27f (the door frame front)
+        // Left wall at Z: elevator.z - 6.24f
+        // Right wall at Z: elevator.z + 6.24f
+
+        // Based on rendering code:
+        // - Wall segments extend from elevator center in Z direction
+        // - Each wall segment is about 5m tall and positioned at specific Z offsets
+        // - We need collision for the parts BESIDE the door, not in front
+
+        final float doorFrontX = position.x + 0.27f; // Where the wall segments are rendered
+        final float halfDoorWidth = DOOR_WIDTH / 2f; // 1.25m on each side of center
+
+        // Define the wall collision zones (only on the SIDES of the door)
+        // These should match the visual wall positions from MazeRenderer
+
+        // Left wall zone (at Z = elevator.z - 6.24f, extends in X direction deeper into elevator)
+        final float leftWallZ = position.z - 6.24f;
+        final float leftWallWidth = 2.5f; // Width of wall segment in Z
+        final float leftWallDepth = 3.0f; // Depth into elevator in X
+
+        // Right wall zone (at Z = elevator.z + 6.24f, extends in X direction deeper into elevator)
+        final float rightWallZ = position.z + 6.24f;
+        final float rightWallWidth = 2.5f; // Width of wall segment in Z
+        final float rightWallDepth = 3.0f; // Depth into elevator in X
+
+        // Check collision with left wall (only blocks to the LEFT side, not in front of door)
+        if (checkBoxCollision(testPosition, playerRadius,
+                position.x - leftWallDepth, doorFrontX,
+                leftWallZ - leftWallWidth/2f, leftWallZ + leftWallWidth/2f)) {
+            return true;
+        }
+
+        // Check collision with right wall (only blocks to the RIGHT side, not in front of door)
+        if (checkBoxCollision(testPosition, playerRadius,
+                position.x - rightWallDepth, doorFrontX,
+                rightWallZ - rightWallWidth/2f, rightWallZ + rightWallWidth/2f)) {
+            return true;
+        }
+
+        return false;
+    }
+
+    /**
+     * Helper method to check collision between a circle (player) and an axis-aligned box (wall).
+     *
+     * @param position Player position
+     * @param radius Player collision radius
+     * @param minX Minimum X of box
+     * @param maxX Maximum X of box
+     * @param minZ Minimum Z of box
+     * @param maxZ Maximum Z of box
+     * @return True if collision detected
+     */
+    private boolean checkBoxCollision(final Vector3 position, final float radius,
+                                     final float minX, final float maxX,
+                                     final float minZ, final float maxZ) {
+        // Find closest point on box to the circle center
+        final float closestX = Math.max(minX, Math.min(position.x, maxX));
+        final float closestZ = Math.max(minZ, Math.min(position.z, maxZ));
+
+        // Calculate distance from closest point to circle center
+        final float dx = position.x - closestX;
+        final float dz = position.z - closestZ;
+        final float distanceSquared = dx * dx + dz * dz;
+
+        return distanceSquared < radius * radius;
     }
 
     // Getters

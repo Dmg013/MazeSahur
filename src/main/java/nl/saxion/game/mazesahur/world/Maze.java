@@ -122,5 +122,89 @@ public class Maze {
         System.out.println("[Maze] Created opening at grid (" + centerX + ", " + centerZ
             + ") with size " + width + "x" + depth);
     }
+
+    /**
+     * Finds and prepares a guaranteed elevator position in the maze.
+     * This method searches for a suitable wall near the player spawn and creates
+     * the necessary openings for the elevator.
+     *
+     * @param playerGridX Player spawn X in grid coordinates
+     * @param playerGridZ Player spawn Z in grid coordinates
+     * @return Array with elevator position info: [wallX, wallZ, openX, openZ, directionIndex]
+     *         where direction: 0=North, 1=East, 2=South, 3=West
+     */
+    public int[] findAndPrepareElevatorPosition(final int playerGridX, final int playerGridZ) {
+        // Search pattern: spiral outward from player
+        final int[][] searchOffsets = {
+            {0, 5}, {0, 6}, {0, 7},    // North
+            {5, 0}, {6, 0}, {7, 0},    // East
+            {0, -5}, {0, -6}, {0, -7}, // South
+            {-5, 0}, {-6, 0}, {-7, 0}, // West
+            {4, 4}, {5, 5}, {-4, 4}, {-5, 5} // Diagonals
+        };
+
+        // Wall direction vectors
+        final int[][] wallDirections = {
+            {0, -1},  // North - wall to north, door faces south
+            {1, 0},   // East - wall to east, door faces west
+            {0, 1},   // South - wall to south, door faces north
+            {-1, 0}   // West - wall to west, door faces east
+        };
+
+        // Try each search position
+        for (final int[] offset : searchOffsets) {
+            final int openX = playerGridX + offset[0];
+            final int openZ = playerGridZ + offset[1];
+
+            // Check bounds
+            if (openX < 3 || openX >= width - 3 || openZ < 3 || openZ >= height - 3) {
+                continue;
+            }
+
+            // This position should be open (path)
+            if (isWall(openX, openZ)) {
+                continue;
+            }
+
+            // Check each direction for a wall
+            for (int dirIdx = 0; dirIdx < wallDirections.length; dirIdx++) {
+                final int[] wallDir = wallDirections[dirIdx];
+                final int wallX = openX + wallDir[0];
+                final int wallZ = openZ + wallDir[1];
+
+                // Check if there's a wall here
+                if (!isWall(wallX, wallZ)) {
+                    continue; // No wall in this direction
+                }
+
+                // Found a suitable wall! Now prepare it for elevator
+                // Create openings for elevator body (in wall) and door access (in open space)
+                createOpening(wallX, wallZ, 2, 2);  // Clear wall for elevator
+                createOpening(openX, openZ, 2, 2);  // Clear path for access
+
+                System.out.println("[Maze] Found elevator position:");
+                System.out.println("  Wall grid: (" + wallX + ", " + wallZ + ")");
+                System.out.println("  Open grid: (" + openX + ", " + openZ + ")");
+                System.out.println("  Direction: " + dirIdx + " (0=N,1=E,2=S,3=W)");
+
+                return new int[] {wallX, wallZ, openX, openZ, dirIdx};
+            }
+        }
+
+        // Fallback: force create a position
+        System.out.println("[Maze] WARNING: No suitable wall found, forcing elevator position");
+        final int fallbackX = playerGridX;
+        final int fallbackZ = playerGridZ + 6;
+
+        // Create a wall if needed
+        if (!isWall(fallbackX, fallbackZ)) {
+            walls[fallbackZ][fallbackX] = true;
+        }
+
+        createOpening(fallbackX, fallbackZ, 2, 2);
+        createOpening(fallbackX, fallbackZ + 1, 2, 2);
+
+        return new int[] {fallbackX, fallbackZ, fallbackX, fallbackZ + 1, 0};
+    }
 }
 
