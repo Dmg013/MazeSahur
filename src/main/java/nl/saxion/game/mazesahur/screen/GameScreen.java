@@ -5,10 +5,15 @@ import com.badlogic.gdx.Input;
 import com.badlogic.gdx.graphics.GL20;
 import com.badlogic.gdx.graphics.PerspectiveCamera;
 import com.badlogic.gdx.math.Vector3;
+import java.util.ArrayList;
+import java.util.List;
+import java.util.Random;
 import nl.saxion.game.mazesahur.config.GameConfig;
 import nl.saxion.game.mazesahur.entity.Player;
 import nl.saxion.game.mazesahur.entity.Enemy;
 import nl.saxion.game.mazesahur.entity.Elevator;
+import nl.saxion.game.mazesahur.entity.PhotoFrame;
+import nl.saxion.game.mazesahur.entity.Boost;
 import nl.saxion.game.mazesahur.rendering.LightingManager;
 import nl.saxion.game.mazesahur.rendering.MaterialManager;
 import nl.saxion.game.mazesahur.rendering.MazeRenderer;
@@ -32,6 +37,8 @@ public class GameScreen extends ScalableGameScreen {
     private final Enemy enemy;
     private final Maze maze;
     private Elevator elevator;
+    private final List<PhotoFrame> photoFrames;
+    private final List<Boost> boosts;
 
     // Rendering systems
     private LightingManager lightingManager;
@@ -81,6 +88,12 @@ public class GameScreen extends ScalableGameScreen {
         // Initialize elevator in a valid open position
         elevator = createElevatorInOpenSpace();
 
+        // Initialize photo frames on walls
+        photoFrames = createPhotoFramesOnWalls();
+
+        // Initialize boost pickups
+        boosts = createBoostPickups();
+
         // Camera control initialization
         yaw = 0;
         pitch = 0;
@@ -121,6 +134,12 @@ public class GameScreen extends ScalableGameScreen {
         lightingManager = new LightingManager();
         materialManager = new MaterialManager();
         mazeRenderer = new MazeRenderer(maze, materialManager, lightingManager);
+
+        // Load photo frames after renderer is initialized
+        mazeRenderer.loadPhotoFrames(photoFrames);
+
+        // Load boost pickups after renderer is initialized
+        mazeRenderer.loadBoosts(boosts);
 
         // Initialize UI
         gameUI = new GameUI();
@@ -168,6 +187,16 @@ public class GameScreen extends ScalableGameScreen {
             elevator.update(delta, player.getPosition()); // Update elevator with player position
             updateCamera();
 
+            // Update boosts and check for pickups
+            for (Boost boost : boosts) {
+                boost.update(delta);
+                if (boost.tryCollect(player.getPosition())) {
+                    // Activate boost on player
+                    player.activateBoost(Boost.getBoostDuration(), Boost.getSpeedMultiplier());
+                    System.out.println("[GameScreen] Boost collected! Speed increased for " + Boost.getBoostDuration() + " seconds");
+                }
+            }
+
             // Update lighting
             final boolean isMoving = player.isMoving();
             lightingManager.updateFlashlight(player.getPosition(), camera.direction, delta, isMoving);
@@ -188,6 +217,8 @@ public class GameScreen extends ScalableGameScreen {
         mazeRenderer.renderWithElevator(camera, elevator);
         mazeRenderer.renderEnemy(camera, enemy);
 
+        // Render boost pickups
+        mazeRenderer.renderBoosts(camera, boosts);
         // Render footsteps
         mazeRenderer.renderFootsteps(camera);
 
@@ -470,6 +501,123 @@ public class GameScreen extends ScalableGameScreen {
         System.out.println("[GameScreen] Elevator spawned at center (last resort fallback) - offset back 2 units");
         return new Elevator(maze, fallbackX, fallbackZ);
         */ // End of commented fallback code
+    }
+
+    /**
+     * Creates photo frames on walls throughout the maze.
+     * Frames contain commemorative photo of the elevator.
+     * Spawns randomly with ~10% chance on suitable wall segments.
+     */
+    private List<PhotoFrame> createPhotoFramesOnWalls() {
+        final List<PhotoFrame> frames = new ArrayList<>();
+        final Random random = new Random();
+        final float spawnChance = 0.1f; // 10% chance per suitable wall
+
+        System.out.println("[GameScreen] ===== PHOTO FRAME SPAWN DEBUG =====");
+
+        // Iterate through all maze cells
+        for (int gridZ = 1; gridZ < maze.getHeight() - 1; gridZ++) {
+            for (int gridX = 1; gridX < maze.getWidth() - 1; gridX++) {
+                // Only look at corridor cells (not walls)
+                if (!maze.isWall(gridX, gridZ)) {
+                    // Check each wall direction
+                    checkAndSpawnFrame(frames, random, gridX, gridZ, 0, -1, PhotoFrame.WallFace.NORTH, spawnChance);
+                    checkAndSpawnFrame(frames, random, gridX, gridZ, 0, 1, PhotoFrame.WallFace.SOUTH, spawnChance);
+                    checkAndSpawnFrame(frames, random, gridX, gridZ, 1, 0, PhotoFrame.WallFace.EAST, spawnChance);
+                    checkAndSpawnFrame(frames, random, gridX, gridZ, -1, 0, PhotoFrame.WallFace.WEST, spawnChance);
+                }
+            }
+        }
+
+        System.out.println("[GameScreen] Created " + frames.size() + " photo frames throughout maze");
+        System.out.println("[GameScreen] =====================================");
+
+        return frames;
+    }
+
+    /**
+     * Helper method to check if a frame should spawn on a wall and add it if so.
+     */
+    private void checkAndSpawnFrame(final List<PhotoFrame> frames, final Random random,
+                                     final int gridX, final int gridZ,
+                                     final int dx, final int dz,
+                                     final PhotoFrame.WallFace wallFace,
+                                     final float spawnChance) {
+        final int wallX = gridX + dx;
+        final int wallZ = gridZ + dz;
+
+        // Check if there's a wall in this direction
+        if (wallX >= 0 && wallX < maze.getWidth() &&
+            wallZ >= 0 && wallZ < maze.getHeight() &&
+            maze.isWall(wallX, wallZ)) {
+
+            // Random chance to spawn frame
+            if (random.nextFloat() < spawnChance) {
+                // Calculate world position (center of corridor cell, offset very close to wall)
+                final float worldX = gridX * Maze.CELL_SIZE + Maze.CELL_SIZE / 2f + (dx * Maze.CELL_SIZE * 0.49f);
+                final float worldZ = gridZ * Maze.CELL_SIZE + Maze.CELL_SIZE / 2f + (dz * Maze.CELL_SIZE * 0.49f);
+
+                frames.add(new PhotoFrame(maze, worldX, worldZ, wallFace));
+            }
+        }
+    }
+
+    /**
+     * Creates boost pickups randomly in the maze.
+     * Spawns in open areas away from walls and spawn points.
+     */
+    private List<Boost> createBoostPickups() {
+        final List<Boost> boostList = new ArrayList<>();
+        final Random random = new Random();
+        final int targetBoostCount = 8; // Spawn 8 boosts throughout the maze
+        int attempts = 0;
+        final int maxAttempts = 1000;
+
+        System.out.println("[GameScreen] ===== BOOST PICKUP SPAWN DEBUG =====");
+
+        while (boostList.size() < targetBoostCount && attempts < maxAttempts) {
+            attempts++;
+
+            // Random grid position
+            final int gridX = random.nextInt(maze.getWidth());
+            final int gridZ = random.nextInt(maze.getHeight());
+
+            // Check if it's an open area
+            if (!maze.isWall(gridX, gridZ)) {
+                final float worldX = gridX * Maze.CELL_SIZE + Maze.CELL_SIZE / 2f;
+                final float worldZ = gridZ * Maze.CELL_SIZE + Maze.CELL_SIZE / 2f;
+
+                // Check distance from player spawn
+                final float dx = worldX - 12f;
+                final float dz = worldZ - 12f;
+                final float distFromSpawn = (float) Math.sqrt(dx * dx + dz * dz);
+
+                // Don't spawn too close to player spawn
+                if (distFromSpawn > 16f) {
+                    // Check it's not too close to other boosts
+                    boolean tooClose = false;
+                    for (Boost existingBoost : boostList) {
+                        final float bx = existingBoost.getPosition().x - worldX;
+                        final float bz = existingBoost.getPosition().z - worldZ;
+                        final float dist = (float) Math.sqrt(bx * bx + bz * bz);
+                        if (dist < 20f) { // Minimum 20 units apart
+                            tooClose = true;
+                            break;
+                        }
+                    }
+
+                    if (!tooClose) {
+                        boostList.add(new Boost(worldX, worldZ));
+                        System.out.println("[GameScreen] Boost " + boostList.size() + " spawned at (" + worldX + ", " + worldZ + ")");
+                    }
+                }
+            }
+        }
+
+        System.out.println("[GameScreen] Created " + boostList.size() + " boost pickups");
+        System.out.println("[GameScreen] =========================================");
+
+        return boostList;
     }
 
     /**

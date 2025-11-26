@@ -152,8 +152,8 @@ public class MaterialManager {
         material.set(TextureAttribute.createDiffuse(sahurTexture));
         material.set(ColorAttribute.createDiffuse(Color.WHITE));
 
-        // Slight self-illumination for eerie effect
-        material.set(ColorAttribute.createEmissive(new Color(0.1f, 0.02f, 0.02f, 1f)));
+        // No emissive - creature should blend with darkness
+        material.set(ColorAttribute.createEmissive(new Color(0.0f, 0.0f, 0.0f, 1f)));
 
         // No specular - creature should look organic/matte
         material.set(ColorAttribute.createSpecular(new Color(0.0f, 0.0f, 0.0f, 1f)));
