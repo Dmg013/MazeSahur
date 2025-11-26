@@ -786,8 +786,11 @@ public class Enemy {
         return GameConfig.ENEMY_CATCH_RADIUS;
     }
 
+    public void setYaw(final float yaw) {
+        this.yaw = yaw;
+    }
+
     public RailNetwork getRailNetwork() {
         return railNetwork;
     }
 }
-

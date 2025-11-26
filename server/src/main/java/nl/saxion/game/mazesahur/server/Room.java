@@ -11,10 +11,14 @@ import java.util.UUID;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.CopyOnWriteArraySet;
 import nl.saxion.game.mazesahur.config.GameConfig;
+import nl.saxion.game.mazesahur.entity.Enemy;
+import nl.saxion.game.mazesahur.entity.Player;
+import com.badlogic.gdx.math.Vector3;
 import nl.saxion.game.mazesahur.server.protocol.Messages.InputMessage;
 import nl.saxion.game.mazesahur.server.protocol.Messages.JoinedResponse;
 import nl.saxion.game.mazesahur.server.protocol.Messages.PlayerState;
 import nl.saxion.game.mazesahur.server.protocol.Messages.StateMessage;
+import nl.saxion.game.mazesahur.server.protocol.Messages.EnemyState;
 import nl.saxion.game.mazesahur.world.Maze;
 
 /**
@@ -30,6 +34,8 @@ public class Room {
     private final Map<String, InputMessage> latestInputs = new ConcurrentHashMap<>();
     private final CopyOnWriteArraySet<Channel> channels = new CopyOnWriteArraySet<>();
     private final ObjectMapper mapper;
+    private final Player proxyPlayer;
+    private final Enemy enemy;
 
     public Room(final String roomId, final long seed, final ObjectMapper mapper) {
         this.roomId = roomId;
@@ -37,6 +43,9 @@ public class Room {
         this.mapper = mapper;
         this.maze = new Maze(GameConfig.MAZE_SIZE, GameConfig.MAZE_SIZE, seed);
         this.maze.generate();
+        this.proxyPlayer = new Player(new Vector3(12f, GameConfig.PLAYER_HEIGHT, 12f));
+        this.enemy = new Enemy(maze, proxyPlayer);
+        this.enemy.initialize();
     }
 
     public String getRoomId() {
@@ -92,11 +101,21 @@ public class Room {
             }
         }
 
+        // Update proxy target to nearest player
+        final PlayerState target = nearestPlayerToEnemy();
+        if (target != null) {
+            proxyPlayer.getPosition().set(target.x, target.y, target.z);
+        }
+
+        // Update enemy AI
+        enemy.update(deltaSeconds);
+
         // Build snapshot
         final StateMessage stateMsg = new StateMessage();
         stateMsg.type = "state";
         stateMsg.ts = System.currentTimeMillis();
         stateMsg.players = new ArrayList<>(players.values());
+        stateMsg.enemy = buildEnemyState();
 
         // Broadcast
         final String json;
@@ -123,6 +142,15 @@ public class Room {
         joined.seed = seed;
         joined.players = new ArrayList<>(players.values());
         return joined;
+    }
+
+    private EnemyState buildEnemyState() {
+        final EnemyState es = new EnemyState();
+        es.x = enemy.getPosition().x;
+        es.y = enemy.getPosition().y;
+        es.z = enemy.getPosition().z;
+        es.yaw = enemy.getYaw();
+        return es;
     }
 
     private void applyMovement(final PlayerState state, final InputMessage input, final float deltaSeconds) {
@@ -184,6 +212,21 @@ public class Room {
     private float[] defaultSpawnPosition() {
         // Spawn near the same coordinates as singleplayer (12,12)
         return new float[] {12f, 12f};
+    }
+
+    private PlayerState nearestPlayerToEnemy() {
+        PlayerState nearest = null;
+        float best = Float.MAX_VALUE;
+        for (PlayerState ps : players.values()) {
+            final float dx = ps.x - enemy.getPosition().x;
+            final float dz = ps.z - enemy.getPosition().z;
+            final float dist2 = dx * dx + dz * dz;
+            if (dist2 < best) {
+                best = dist2;
+                nearest = ps;
+            }
+        }
+        return nearest;
     }
 
     @Override

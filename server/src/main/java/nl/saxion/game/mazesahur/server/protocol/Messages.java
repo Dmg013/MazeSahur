@@ -46,11 +46,19 @@ public final class Messages {
         public long ts;
         public List<PlayerState> players;
         public long seqAck;
+        public EnemyState enemy;
     }
 
     public static final class PlayerState {
         public String id;
         public String name;
+        public float x;
+        public float y;
+        public float z;
+        public float yaw;
+    }
+
+    public static final class EnemyState {
         public float x;
         public float y;
         public float z;

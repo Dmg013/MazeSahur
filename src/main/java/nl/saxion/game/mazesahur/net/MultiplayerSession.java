@@ -26,6 +26,7 @@ public class MultiplayerSession implements NetworkClientCallback {
     private volatile String playerId;
     private volatile long seed;
     private volatile boolean joined = false;
+    private volatile EnemySnapshot enemySnapshot;
 
     public MultiplayerSession(final NetworkSessionConfig config) {
         this.config = config;
@@ -90,6 +91,10 @@ public class MultiplayerSession implements NetworkClientCallback {
      */
     public RemotePlayerState getSelfState() {
         return players.get(playerId);
+    }
+
+    public EnemySnapshot getEnemySnapshot() {
+        return enemySnapshot;
     }
 
     @Override
@@ -160,6 +165,10 @@ public class MultiplayerSession implements NetworkClientCallback {
                 final RemotePlayerState state = mapper.convertValue(node, RemotePlayerState.class);
                 players.put(state.id, state);
             }
+        }
+        final JsonNode enemyNode = root.path("enemy");
+        if (enemyNode != null && !enemyNode.isMissingNode()) {
+            enemySnapshot = mapper.convertValue(enemyNode, EnemySnapshot.class);
         }
     }
 

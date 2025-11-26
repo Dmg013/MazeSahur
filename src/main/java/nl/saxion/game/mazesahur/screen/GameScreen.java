@@ -81,6 +81,7 @@ public class GameScreen extends ScalableGameScreen {
     private final MultiplayerSession multiplayerSession;
     private final boolean networked;
     private List<RemotePlayerState> remotePlayers = new ArrayList<>();
+    private boolean useNetworkEnemy = false;
 
     /**
      * Creates a new game screen with default settings.
@@ -231,7 +232,9 @@ public class GameScreen extends ScalableGameScreen {
             // Update game state
             handleInput(delta);
             player.update(delta, maze);
-            enemy.update(delta);
+            if (!useNetworkEnemy) {
+                enemy.update(delta);
+            }
             elevator.update(delta, player.getPosition()); // Update elevator with player position
             updateCamera();
 
@@ -674,6 +677,15 @@ public class GameScreen extends ScalableGameScreen {
             // Keep local yaw from mouse; server yaw can lag and cause camera snaps
         }
         remotePlayers = multiplayerSession.getRemotePlayers();
+
+        final var enemySnap = multiplayerSession.getEnemySnapshot();
+        if (enemySnap != null) {
+            useNetworkEnemy = true;
+            enemy.getPosition().set(enemySnap.x, enemySnap.y, enemySnap.z);
+            enemy.setYaw(enemySnap.yaw);
+        } else {
+            useNetworkEnemy = false;
+        }
     }
 
     /**
