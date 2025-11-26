@@ -9,6 +9,8 @@ import com.badlogic.gdx.math.Vector3;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Random;
+import nl.saxion.game.mazesahur.net.MultiplayerSession;
+import nl.saxion.game.mazesahur.net.RemotePlayerState;
 import nl.saxion.game.mazesahur.config.GameConfig;
 import nl.saxion.game.mazesahur.entity.Player;
 import nl.saxion.game.mazesahur.entity.Enemy;
@@ -75,11 +77,16 @@ public class GameScreen extends ScalableGameScreen {
     // Debug visualization
     private boolean showRailNetwork = false;
 
+    // Multiplayer
+    private final MultiplayerSession multiplayerSession;
+    private final boolean networked;
+    private List<RemotePlayerState> remotePlayers = new ArrayList<>();
+
     /**
      * Creates a new game screen with default settings.
      */
     public GameScreen() {
-        this(null);
+        this(null, null);
     }
 
     /**
@@ -89,9 +96,24 @@ public class GameScreen extends ScalableGameScreen {
      * @param mazeSeed Seed to use for maze generation (null = random)
      */
     public GameScreen(final Long mazeSeed) {
+        this(mazeSeed, null);
+    }
+
+    /**
+     * Creates a new game screen with optional seed and multiplayer session.
+     *
+     * @param mazeSeed Seed to use for maze generation (null = random)
+     * @param session Multiplayer session (null for singleplayer)
+     */
+    public GameScreen(final Long mazeSeed, final MultiplayerSession session) {
         super(1280, 720);
 
-        final long seed = mazeSeed != null ? mazeSeed : System.currentTimeMillis();
+        this.multiplayerSession = session;
+        this.networked = session != null;
+
+        final long seed = mazeSeed != null
+            ? mazeSeed
+            : (session != null ? session.getSeed() : System.currentTimeMillis());
 
         // Initialize world
         maze = new Maze(25, 25, seed);
@@ -115,7 +137,7 @@ public class GameScreen extends ScalableGameScreen {
         pitch = 0;
         firstMouse = true;
 
-        System.out.println("[GameScreen] Using maze seed: " + seed);
+        System.out.println("[GameScreen] Using maze seed: " + seed + " networked=" + networked);
     }
 
     @Override
@@ -201,6 +223,11 @@ public class GameScreen extends ScalableGameScreen {
 
         // Skip normal game logic if dead
         if (!isDead) {
+            // Apply latest network state before local updates
+            if (networked && multiplayerSession != null && multiplayerSession.isJoined()) {
+                syncNetworkState();
+            }
+
             // Update game state
             handleInput(delta);
             player.update(delta, maze);
@@ -240,6 +267,10 @@ public class GameScreen extends ScalableGameScreen {
 
         // Render boost pickups
         mazeRenderer.renderBoosts(camera, boosts);
+        // Render remote players (if any)
+        if (networked) {
+            mazeRenderer.renderRemotePlayers(camera, remotePlayers);
+        }
         // Render footsteps
         mazeRenderer.renderFootsteps(camera);
 
@@ -322,6 +353,22 @@ public class GameScreen extends ScalableGameScreen {
         }
 
         // Apply movement with collision detection
+        // Always send input when networked so server knows when you stop moving
+        if (networked && multiplayerSession != null && multiplayerSession.isJoined()) {
+            final boolean hasInput = moveDirection.len2() > 0.0001f;
+            multiplayerSession.sendInput(moveDirection.x, moveDirection.z, yaw);
+            if (hasInput) {
+                final float speedMultiplier = player.getCurrentSpeedMultiplier();
+                final float currentSpeed = GameConfig.PLAYER_MOVE_SPEED * speedMultiplier;
+                final Vector3 predicted = player.getPosition().cpy()
+                    .add(moveDirection.nor().scl(currentSpeed * delta));
+                if (!checkCollision(predicted)) {
+                    player.getPosition().set(predicted);
+                }
+            }
+            return;
+        }
+
         if (moveDirection.len() > 0) {
             // Calculate speed based on energy level
             final float speedMultiplier = player.getCurrentSpeedMultiplier();
@@ -603,6 +650,30 @@ public class GameScreen extends ScalableGameScreen {
             Gdx.input.setCursorCatched(false);
             Gdx.app.exit();
         }
+    }
+
+    /**
+     * Applies latest authoritative state from the multiplayer session.
+     */
+    private void syncNetworkState() {
+        if (multiplayerSession == null) {
+            return;
+        }
+
+        final RemotePlayerState self = multiplayerSession.getSelfState();
+        if (self != null) {
+            final Vector3 target = new Vector3(self.x, self.y, self.z);
+            final float dist = player.getPosition().dst(target);
+            if (dist > 1.0f) {
+                // Large correction, snap
+                player.getPosition().set(target);
+            } else {
+                // Smooth blend
+                player.getPosition().lerp(target, 0.1f);
+            }
+            // Keep local yaw from mouse; server yaw can lag and cause camera snaps
+        }
+        remotePlayers = multiplayerSession.getRemotePlayers();
     }
 
     /**

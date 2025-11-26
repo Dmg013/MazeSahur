@@ -14,6 +14,12 @@ import com.badlogic.gdx.math.Rectangle;
 import com.badlogic.gdx.utils.Align;
 import nl.saxion.gameapp.GameApp;
 import nl.saxion.gameapp.screens.ScalableGameScreen;
+import nl.saxion.game.mazesahur.net.MultiplayerSession;
+import nl.saxion.game.mazesahur.net.NetworkDefaults;
+import nl.saxion.game.mazesahur.net.NetworkSessionConfig;
+import com.badlogic.gdx.Gdx;
+import com.badlogic.gdx.Input;
+import com.badlogic.gdx.InputAdapter;
 
 /**
  * Main menu screen with Play, Settings, and Multiplayer buttons.
@@ -58,6 +64,58 @@ public class MenuScreen extends ScalableGameScreen {
     private float buttonFontScale;
     private float subtitleScale;
 
+    // Multiplayer form
+    private boolean showMultiplayerForm = false;
+    private String serverField;
+    private String roomField;
+    private String nameField;
+    private FormField activeField = FormField.SERVER;
+    private final InputAdapter formInputProcessor = new InputAdapter() {
+        @Override
+        public boolean keyTyped(final char character) {
+            if (!showMultiplayerForm || activeField == null) {
+                return false;
+            }
+            if (character == '\b') { // backspace
+                backspaceActiveField();
+                return true;
+            }
+            if (character == '\r' || character == '\n') { // enter
+                startMultiplayer(serverField, roomField, nameField);
+                return true;
+            }
+            if (character >= 32 && character < 127) {
+                appendToActiveField(character);
+                return true;
+            }
+            return false;
+        }
+
+        @Override
+        public boolean keyDown(final int keycode) {
+            if (!showMultiplayerForm) {
+                return false;
+            }
+            if (keycode == Input.Keys.ESCAPE) {
+                showMultiplayerForm = false;
+                activeField = FormField.SERVER;
+                Gdx.input.setInputProcessor(null);
+                return true;
+            }
+            if (keycode == Input.Keys.TAB) {
+                cycleField();
+                return true;
+            }
+            return false;
+        }
+    };
+
+    private enum FormField {
+        SERVER,
+        ROOM,
+        NAME
+    }
+
     // Virtual viewport dimensions
     private static final int VIEWPORT_WIDTH = 1280;
     private static final int VIEWPORT_HEIGHT = 720;
@@ -70,6 +128,10 @@ public class MenuScreen extends ScalableGameScreen {
     private static final Color TITLE_COLOR = new Color(0.9f, 0.15f, 0.15f, 1.0f);
     private static final Color SUBTITLE_COLOR = new Color(0.6f, 0.6f, 0.6f, 0.8f);
     private static final Color SHADOW_COLOR = new Color(0.0f, 0.0f, 0.0f, 0.6f);
+    private static final Color PANEL_COLOR = new Color(0.08f, 0.08f, 0.1f, 0.92f);
+    private static final Color FIELD_BG = new Color(0.15f, 0.15f, 0.18f, 0.95f);
+    private static final Color FIELD_BG_ACTIVE = new Color(0.2f, 0.2f, 0.25f, 0.95f);
+    private static final Color FIELD_BORDER = new Color(0.7f, 0.1f, 0.1f, 1.0f);
 
     /**
      * Creates a new menu screen.
@@ -167,12 +229,12 @@ public class MenuScreen extends ScalableGameScreen {
         int mouseY = VIEWPORT_HEIGHT - Gdx.input.getY();
 
         // Check hover states
-        boolean playHovered = playButton.contains(mouseX, mouseY);
-        boolean settingsHovered = settingsButton.contains(mouseX, mouseY);
-        boolean multiplayerHovered = multiplayerButton.contains(mouseX, mouseY);
+        boolean playHovered = !showMultiplayerForm && playButton.contains(mouseX, mouseY);
+        boolean settingsHovered = !showMultiplayerForm && settingsButton.contains(mouseX, mouseY);
+        boolean multiplayerHovered = !showMultiplayerForm && multiplayerButton.contains(mouseX, mouseY);
 
         // Handle clicks
-        if (Gdx.input.justTouched()) {
+        if (!showMultiplayerForm && Gdx.input.justTouched()) {
             if (playHovered) {
                 onPlayClicked();
             } else if (settingsHovered) {
@@ -261,6 +323,14 @@ public class MenuScreen extends ScalableGameScreen {
         subtitleFont.getData().setScale(subtitleScale);
 
         batch.end();
+
+        // Render multiplayer overlay last
+        if (showMultiplayerForm) {
+            renderMultiplayerForm(mouseX, mouseY);
+        }
+
+        // Reset line width
+        Gdx.gl.glLineWidth(1f);
     }
 
     /**
@@ -363,13 +433,183 @@ public class MenuScreen extends ScalableGameScreen {
      * Currently not implemented - placeholder for future multiplayer features.
      */
     private void onMultiplayerClicked() {
-        System.out.println("[MenuScreen] Multiplayer button clicked (not yet implemented)");
-        // TODO: Implement multiplayer functionality
+        System.out.println("[MenuScreen] Multiplayer button clicked - Showing form");
+        serverField = NetworkDefaults.serverUrl();
+        roomField = NetworkDefaults.room();
+        nameField = NetworkDefaults.playerName();
+        activeField = FormField.SERVER;
+        showMultiplayerForm = true;
+        Gdx.input.setInputProcessor(formInputProcessor);
+    }
+
+    private void startMultiplayer(final String serverUrl, final String room, final String playerName) {
+        final NetworkSessionConfig config = new NetworkSessionConfig(serverUrl, room, playerName);
+
+        final MultiplayerSession session = new MultiplayerSession(config);
+        final boolean joined = session.connectAndAwaitJoin(java.time.Duration.ofSeconds(5));
+        if (!joined) {
+            System.out.println("[MenuScreen] Multiplayer join failed");
+            return;
+        }
+
+        final GameScreen gameScreen = new GameScreen(session.getSeed(), session);
+        GameApp.addScreen("Game", gameScreen);
+        GameApp.switchScreen("Game");
+        showMultiplayerForm = false;
+        Gdx.input.setInputProcessor(null);
+    }
+
+    private void renderMultiplayerForm(final int mouseX, final int mouseY) {
+        final boolean clicked = Gdx.input.justTouched();
+
+        // Dim background
+        Gdx.gl.glEnable(GL20.GL_BLEND);
+        Gdx.gl.glBlendFunc(GL20.GL_SRC_ALPHA, GL20.GL_ONE_MINUS_SRC_ALPHA);
+        shapeRenderer.begin(ShapeRenderer.ShapeType.Filled);
+        shapeRenderer.setColor(new Color(0f, 0f, 0f, 0.6f));
+        shapeRenderer.rect(0, 0, VIEWPORT_WIDTH, VIEWPORT_HEIGHT);
+
+        final float panelWidth = 760f;
+        final float panelHeight = 380f;
+        final float panelX = (VIEWPORT_WIDTH - panelWidth) / 2f;
+        final float panelY = (VIEWPORT_HEIGHT - panelHeight) / 2f;
+
+        final Rectangle serverRect = new Rectangle(panelX + 40, panelY + panelHeight - 120, panelWidth - 80, 50);
+        final Rectangle roomRect = new Rectangle(panelX + 40, panelY + panelHeight - 190, panelWidth - 80, 50);
+        final Rectangle nameRect = new Rectangle(panelX + 40, panelY + panelHeight - 260, panelWidth - 80, 50);
+        final Rectangle connectRect = new Rectangle(panelX + panelWidth - 200, panelY + 30, 160, 50);
+
+        shapeRenderer.setColor(PANEL_COLOR);
+        shapeRenderer.rect(panelX, panelY, panelWidth, panelHeight);
+
+        renderFieldRect(serverRect, activeField == FormField.SERVER);
+        renderFieldRect(roomRect, activeField == FormField.ROOM);
+        renderFieldRect(nameRect, activeField == FormField.NAME);
+
+        shapeRenderer.setColor(BUTTON_COLOR);
+        shapeRenderer.rect(connectRect.x, connectRect.y, connectRect.width, connectRect.height);
+        shapeRenderer.end();
+
+        shapeRenderer.begin(ShapeRenderer.ShapeType.Line);
+        shapeRenderer.setColor(FIELD_BORDER);
+        shapeRenderer.rect(panelX, panelY, panelWidth, panelHeight);
+        shapeRenderer.rect(serverRect.x, serverRect.y, serverRect.width, serverRect.height);
+        shapeRenderer.rect(roomRect.x, roomRect.y, roomRect.width, roomRect.height);
+        shapeRenderer.rect(nameRect.x, nameRect.y, nameRect.width, nameRect.height);
+        shapeRenderer.setColor(BUTTON_BORDER_COLOR);
+        shapeRenderer.rect(connectRect.x, connectRect.y, connectRect.width, connectRect.height);
+        shapeRenderer.end();
+
+        batch.begin();
+        subtitleFont.getData().setScale(0.9f);
+        subtitleFont.setColor(Color.LIGHT_GRAY);
+        subtitleFont.draw(batch, "Multiplayer", panelX, panelY + panelHeight - 40, panelWidth, Align.center, false);
+
+        drawFieldText("Server URL", serverField, serverRect);
+        drawFieldText("Room", roomField, roomRect);
+        drawFieldText("Naam", nameField, nameRect);
+
+        buttonFont.getData().setScale(1.0f);
+        glyphLayout.setText(buttonFont, "CONNECT");
+        buttonFont.setColor(Color.WHITE);
+        buttonFont.draw(batch, "CONNECT",
+            connectRect.x + (connectRect.width - glyphLayout.width) / 2f,
+            connectRect.y + (connectRect.height + glyphLayout.height) / 2f);
+        batch.end();
+
+        if (clicked) {
+            if (serverRect.contains(mouseX, mouseY)) {
+                activeField = FormField.SERVER;
+            } else if (roomRect.contains(mouseX, mouseY)) {
+                activeField = FormField.ROOM;
+            } else if (nameRect.contains(mouseX, mouseY)) {
+                activeField = FormField.NAME;
+            } else if (connectRect.contains(mouseX, mouseY)) {
+                startMultiplayer(serverField, roomField, nameField);
+            }
+        }
+    }
+
+    private void renderFieldRect(final Rectangle rect, final boolean active) {
+        shapeRenderer.setColor(active ? FIELD_BG_ACTIVE : FIELD_BG);
+        shapeRenderer.rect(rect.x, rect.y, rect.width, rect.height);
+    }
+
+    private void drawFieldText(final String label, final String value, final Rectangle rect) {
+        subtitleFont.getData().setScale(0.7f);
+        subtitleFont.setColor(SUBTITLE_COLOR);
+        subtitleFont.draw(batch, label, rect.x + 6, rect.y + rect.height - 8);
+
+        buttonFont.getData().setScale(0.8f);
+        buttonFont.setColor(Color.WHITE);
+        buttonFont.draw(batch, value, rect.x + 10, rect.y + rect.height / 2f + 10);
+    }
+
+    private void appendToActiveField(final char character) {
+        switch (activeField) {
+            case SERVER:
+                serverField = appendClamped(serverField, character);
+                break;
+            case ROOM:
+                roomField = appendClamped(roomField, character);
+                break;
+            case NAME:
+                nameField = appendClamped(nameField, character);
+                break;
+            default:
+                break;
+        }
+    }
+
+    private String appendClamped(final String original, final char c) {
+        if (original.length() >= 120) {
+            return original;
+        }
+        return original + c;
+    }
+
+    private void backspaceActiveField() {
+        switch (activeField) {
+            case SERVER:
+                serverField = backspace(serverField);
+                break;
+            case ROOM:
+                roomField = backspace(roomField);
+                break;
+            case NAME:
+                nameField = backspace(nameField);
+                break;
+            default:
+                break;
+        }
+    }
+
+    private String backspace(final String value) {
+        if (value == null || value.isEmpty()) {
+            return "";
+        }
+        return value.substring(0, value.length() - 1);
+    }
+
+    private void cycleField() {
+        switch (activeField) {
+            case SERVER:
+                activeField = FormField.ROOM;
+                break;
+            case ROOM:
+                activeField = FormField.NAME;
+                break;
+            case NAME:
+            default:
+                activeField = FormField.SERVER;
+                break;
+        }
     }
 
     @Override
     public void hide() {
         // Called when this screen is no longer active
+        Gdx.input.setInputProcessor(null);
     }
 
     @Override
@@ -391,4 +631,3 @@ public class MenuScreen extends ScalableGameScreen {
         }
     }
 }
-

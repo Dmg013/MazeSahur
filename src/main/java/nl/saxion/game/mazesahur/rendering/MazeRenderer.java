@@ -34,6 +34,8 @@ import nl.saxion.game.mazesahur.world.Maze;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
+import java.util.concurrent.ConcurrentHashMap;
+import nl.saxion.game.mazesahur.net.RemotePlayerState;
 
 /**
  * Handles rendering of the 3D maze and entities.
@@ -87,6 +89,8 @@ public class MazeRenderer {
     private AnimationController enemyWalkingAnimationController;
     private AnimationController enemyRunningAnimationController;
     private Environment enemyEnvironment; // Dark environment for enemy lighting
+    private Model remotePlayerModel;
+    private Map<String, ModelInstance> remotePlayerInstances = new ConcurrentHashMap<>();
 
     // Lamp flickering
     private float[] lampFlickerTimers;
@@ -175,6 +179,9 @@ public class MazeRenderer {
         // Initialize footstep manager
         footstepManager = new FootstepManager();
         footstepManager.initialize();
+
+        // Build placeholder model for remote players (simple cube)
+        buildRemotePlayerModel();
     }
 
     /**
@@ -244,6 +251,20 @@ public class MazeRenderer {
                 }
             }
         }
+    }
+
+    /**
+     * Builds a simple cube to visualize remote players.
+     */
+    private void buildRemotePlayerModel() {
+        final ModelBuilder modelBuilder = new ModelBuilder();
+        remotePlayerModel = modelBuilder.createBox(
+            GameConfig.PLAYER_COLLISION_RADIUS * 2,
+            GameConfig.PLAYER_HEIGHT,
+            GameConfig.PLAYER_COLLISION_RADIUS * 2,
+            new Material(ColorAttribute.createDiffuse(Color.SKY)),
+            VertexAttributes.Usage.Position | VertexAttributes.Usage.Normal
+        );
     }
 
     /**
@@ -1261,6 +1282,42 @@ public class MazeRenderer {
     }
 
     /**
+     * Renders remote players as simple cubes.
+     *
+     * @param camera The game camera
+     * @param players Remote player states
+     */
+    public void renderRemotePlayers(final PerspectiveCamera camera, final List<RemotePlayerState> players) {
+        if (remotePlayerModel == null || players == null) {
+            return;
+        }
+
+        // Remove instances that are no longer present
+        remotePlayerInstances.keySet().removeIf(id ->
+            players.stream().noneMatch(p -> p.id.equals(id)));
+
+        // Update/create instances
+        for (RemotePlayerState state : players) {
+            ModelInstance instance = remotePlayerInstances.get(state.id);
+            if (instance == null) {
+                instance = new ModelInstance(remotePlayerModel);
+                remotePlayerInstances.put(state.id, instance);
+            }
+            instance.transform.idt();
+            instance.transform.translate(state.x, state.y / 2f, state.z);
+            instance.transform.rotate(Vector3.Y, state.yaw);
+        }
+
+        if (!remotePlayerInstances.isEmpty()) {
+            modelBatch.begin(camera);
+            for (ModelInstance instance : remotePlayerInstances.values()) {
+                modelBatch.render(instance);
+            }
+            modelBatch.end();
+        }
+    }
+
+    /**
      * Renders footsteps on the floor.
      *
      * @param camera The game camera
@@ -1398,4 +1455,3 @@ public class MazeRenderer {
         }
     }
 }
-
