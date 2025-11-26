@@ -30,7 +30,7 @@ public class GameUI {
     }
 
     /**
-     * Renders the game UI.
+     * Renders the game UI.f
      *
      * @param gameScreen Reference to the game screen
      * @param player The player entity

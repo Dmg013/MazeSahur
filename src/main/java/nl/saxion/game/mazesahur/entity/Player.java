@@ -20,6 +20,7 @@ public class Player {
     private boolean boostActive;
     private float boostTimer;
     private float boostSpeedMultiplier;
+    private boolean isSprinting;
 
     /**
      * Creates a new player at the specified position.
@@ -32,6 +33,7 @@ public class Player {
         this.boostActive = false;
         this.boostTimer = 0f;
         this.boostSpeedMultiplier = 1.0f;
+        this.isSprinting = false;
     }
 
     /**
@@ -191,6 +193,24 @@ public class Player {
      */
     public static float getCollisionRadius() {
         return GameConfig.PLAYER_COLLISION_RADIUS;
+    }
+
+    /**
+     * Sets whether the player is sprinting.
+     *
+     * @param sprinting True if sprinting, false otherwise
+     */
+    public void setSprinting(final boolean sprinting) {
+        this.isSprinting = sprinting;
+    }
+
+    /**
+     * Checks if the player is currently sprinting.
+     *
+     * @return True if sprinting
+     */
+    public boolean isSprinting() {
+        return isSprinting;
     }
 }
 

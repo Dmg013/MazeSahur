@@ -22,7 +22,8 @@
       "Bash(git restore:*)",
       "Bash(mkdir:*)",
       "Bash(cp:*)",
-      "WebFetch(domain:libgdx.com)"
+      "WebFetch(domain:libgdx.com)",
+      "Bash(mv:*)"
     ],
     "deny": [],
     "ask": []

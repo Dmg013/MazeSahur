@@ -202,6 +202,9 @@ public class GameScreen extends ScalableGameScreen {
             lightingManager.updateFlashlight(player.getPosition(), camera.direction, delta, isMoving);
             mazeRenderer.updateLampFlicker(delta);
 
+            // Update footsteps
+            mazeRenderer.updateFootsteps(delta, enemy);
+
             // Handle input
             handleGameInput();
         }
@@ -216,6 +219,8 @@ public class GameScreen extends ScalableGameScreen {
 
         // Render boost pickups
         mazeRenderer.renderBoosts(camera, boosts);
+        // Render footsteps
+        mazeRenderer.renderFootsteps(camera);
 
         // Render debug visualizations
         if (showRailNetwork) {
@@ -259,6 +264,11 @@ public class GameScreen extends ScalableGameScreen {
             pitch = -MAX_PITCH;
         }
 
+        // Check if player is sprinting (Shift key)
+        final boolean isSprinting = Gdx.input.isKeyPressed(Input.Keys.SHIFT_LEFT)
+            || Gdx.input.isKeyPressed(Input.Keys.SHIFT_RIGHT);
+        player.setSprinting(isSprinting);
+
         // Calculate movement direction
         final Vector3 forward = getForwardVector();
         final Vector3 right = getRightVector();
@@ -279,7 +289,9 @@ public class GameScreen extends ScalableGameScreen {
 
         // Apply movement with collision detection
         if (moveDirection.len() > 0) {
-            moveDirection.nor().scl(GameConfig.PLAYER_MOVE_SPEED * delta);
+            // Use sprint speed if sprinting, otherwise normal speed
+            final float moveSpeed = isSprinting ? GameConfig.PLAYER_SPRINT_SPEED : GameConfig.PLAYER_MOVE_SPEED;
+            moveDirection.nor().scl(moveSpeed * delta);
 
             // Try full movement first
             final Vector3 newPosition = player.getPosition().cpy().add(moveDirection);
@@ -726,6 +738,11 @@ public class GameScreen extends ScalableGameScreen {
         if (jumpscareActive) {
             camera.position.add(jumpscareShakeOffset);
         }
+
+        // Apply FOV effect when sprinting (speed effect)
+        final float targetFOV = player.isSprinting() ? GameConfig.FIELD_OF_VIEW + 10f : GameConfig.FIELD_OF_VIEW;
+        // Smoothly interpolate FOV for smooth transition
+        camera.fieldOfView += (targetFOV - camera.fieldOfView) * 0.1f;
 
         // Calculate look direction
         final double yawRad = Math.toRadians(yaw);

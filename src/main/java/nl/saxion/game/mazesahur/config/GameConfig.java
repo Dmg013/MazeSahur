@@ -22,7 +22,8 @@ public final class GameConfig {
     public static final float CAMERA_FAR = 100f;
     
     // Player settings
-    public static final float PLAYER_MOVE_SPEED = 12f;
+    public static final float PLAYER_MOVE_SPEED = 8f; // Normal walking speed
+    public static final float PLAYER_SPRINT_SPEED = 14f; // Speed when sprinting (Shift)
     public static final float PLAYER_HEIGHT = 3f;
     public static final float PLAYER_COLLISION_RADIUS = 2.5f;
     

@@ -47,6 +47,7 @@ public class MazeRenderer {
     private final Maze maze;
     private final MaterialManager materialManager;
     private final LightingManager lightingManager;
+    private FootstepManager footstepManager;
 
     private ModelBatch modelBatch;
     private ModelBatch skinnedModelBatch; // Separate batch for skinned animations
@@ -170,6 +171,10 @@ public class MazeRenderer {
 
         // Load elevator model
         loadElevatorModel();
+
+        // Initialize footstep manager
+        footstepManager = new FootstepManager();
+        footstepManager.initialize();
     }
 
     /**
@@ -1244,8 +1249,28 @@ public class MazeRenderer {
     }
 
     /**
-     * Disposes rendering resources.
+     * Updates footstep system based on enemy movement.
+     *
+     * @param delta Time since last frame
+     * @param enemy The enemy entity
      */
+    public void updateFootsteps(final float delta, final Enemy enemy) {
+        if (footstepManager != null) {
+            footstepManager.update(delta, enemy);
+        }
+    }
+
+    /**
+     * Renders footsteps on the floor.
+     *
+     * @param camera The game camera
+     */
+    public void renderFootsteps(final PerspectiveCamera camera) {
+        if (footstepManager != null) {
+            footstepManager.render(camera);
+        }
+    }
+
     /**
      * Renders the rail network for debugging purposes.
      * Shows rail nodes with different colors based on type:
@@ -1367,6 +1392,9 @@ public class MazeRenderer {
         }
         if (shapeRenderer != null) {
             shapeRenderer.dispose();
+        }
+        if (footstepManager != null) {
+            footstepManager.dispose();
         }
     }
 }
