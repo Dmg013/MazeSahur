@@ -9,7 +9,7 @@ public final class NetworkDefaults {
     }
 
     public static String serverUrl() {
-        return System.getenv().getOrDefault("MAZE_SERVER_URL", "ws://localhost:8080/ws");
+        return System.getenv().getOrDefault("MAZE_SERVER_URL", "ws://57.129.114.17:25557/ws");
     }
 
     public static String room() {
