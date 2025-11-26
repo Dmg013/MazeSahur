@@ -31,11 +31,16 @@ public class MenuScreen extends ScalableGameScreen {
     private BitmapFont subtitleFont;
     private GlyphLayout glyphLayout;
 
-    // Button dimensions and positions
-    private static final int BUTTON_WIDTH = 400;
-    private static final int BUTTON_HEIGHT = 70;
-    private static final int BUTTON_SPACING = 25;
+    // Button dimensions and positions (as percentages of screen size)
+    private static final float BUTTON_WIDTH_PERCENT = 0.31f;  // 31% of screen width
+    private static final float BUTTON_HEIGHT_PERCENT = 0.097f; // ~9.7% of screen height
+    private static final float BUTTON_SPACING_PERCENT = 0.035f; // 3.5% of screen height
     private static final int BUTTON_BORDER_WIDTH = 3;
+
+    // Actual button dimensions (calculated based on screen size)
+    private int buttonWidth;
+    private int buttonHeight;
+    private int buttonSpacing;
 
     // Buttons (using Rectangle for hit detection)
     private Rectangle playButton;
@@ -47,6 +52,15 @@ public class MenuScreen extends ScalableGameScreen {
     private float titlePulseTime = 0f;
     private float buttonAnimationDelay = 0f;
     private boolean animationsComplete = false;
+
+    // Font scales (calculated based on screen size)
+    private float titleScale;
+    private float buttonFontScale;
+    private float subtitleScale;
+
+    // Virtual viewport dimensions
+    private static final int VIEWPORT_WIDTH = 1280;
+    private static final int VIEWPORT_HEIGHT = 720;
 
     // Colors - Modern dark theme with red accents
     private static final Color BUTTON_COLOR = new Color(0.12f, 0.12f, 0.15f, 0.95f);
@@ -70,34 +84,64 @@ public class MenuScreen extends ScalableGameScreen {
         shapeRenderer = new ShapeRenderer();
         glyphLayout = new GlyphLayout();
 
-        // Create fonts with better scaling
+        // Create fonts
         titleFont = new BitmapFont();
-        titleFont.getData().setScale(5.0f);
         titleFont.setColor(TITLE_COLOR);
 
         buttonFont = new BitmapFont();
-        buttonFont.getData().setScale(2.2f);
         buttonFont.setColor(Color.WHITE);
 
         subtitleFont = new BitmapFont();
-        subtitleFont.getData().setScale(1.3f);
         subtitleFont.setColor(SUBTITLE_COLOR);
 
-
-        // Calculate button positions (centered on screen)
-        int screenWidth = Gdx.graphics.getBackBufferWidth();
-        int screenHeight = Gdx.graphics.getBackBufferHeight();
-
-        int centerX = (screenWidth - BUTTON_WIDTH) / 2;
-        int startY = screenHeight / 2 + 20;
-
-        playButton = new Rectangle(centerX, startY, BUTTON_WIDTH, BUTTON_HEIGHT);
-        settingsButton = new Rectangle(centerX, startY - BUTTON_HEIGHT - BUTTON_SPACING,
-                BUTTON_WIDTH, BUTTON_HEIGHT);
-        multiplayerButton = new Rectangle(centerX, startY - 2 * (BUTTON_HEIGHT + BUTTON_SPACING),
-                BUTTON_WIDTH, BUTTON_HEIGHT);
+        // Initialize responsive layout
+        calculateResponsiveLayout();
 
         System.out.println("[MenuScreen] Enhanced main menu initialized");
+    }
+
+    /**
+     * Calculates responsive layout based on virtual viewport dimensions.
+     */
+    private void calculateResponsiveLayout() {
+        // Use virtual viewport dimensions for consistent positioning
+        int screenWidth = VIEWPORT_WIDTH;
+        int screenHeight = VIEWPORT_HEIGHT;
+
+        // Calculate button dimensions based on screen size
+        buttonWidth = (int) (screenWidth * BUTTON_WIDTH_PERCENT);
+        buttonHeight = (int) (screenHeight * BUTTON_HEIGHT_PERCENT);
+        buttonSpacing = (int) (screenHeight * BUTTON_SPACING_PERCENT);
+
+        // Use fixed font scales since we're using a fixed virtual viewport
+        titleScale = 5.0f;
+        buttonFontScale = 2.2f;
+        subtitleScale = 1.3f;
+
+        // Apply font scales
+        titleFont.getData().setScale(titleScale);
+        buttonFont.getData().setScale(buttonFontScale);
+        subtitleFont.getData().setScale(subtitleScale);
+
+        // Calculate button positions (centered on screen)
+        int centerX = (screenWidth - buttonWidth) / 2;
+        int startY = screenHeight / 2 + 20;
+
+        if (playButton == null) {
+            playButton = new Rectangle();
+            settingsButton = new Rectangle();
+            multiplayerButton = new Rectangle();
+        }
+
+        playButton.set(centerX, startY, buttonWidth, buttonHeight);
+        settingsButton.set(centerX, startY - buttonHeight - buttonSpacing, buttonWidth, buttonHeight);
+        multiplayerButton.set(centerX, startY - 2 * (buttonHeight + buttonSpacing), buttonWidth, buttonHeight);
+    }
+
+    @Override
+    public void resize(int width, int height) {
+        super.resize(width, height);
+        // Layout uses fixed virtual viewport dimensions, no need to recalculate
     }
 
     @Override
@@ -118,9 +162,9 @@ public class MenuScreen extends ScalableGameScreen {
         Gdx.gl.glClearColor(0.0f, 0.0f, 0.0f, 1.0f);
         Gdx.gl.glClear(GL20.GL_COLOR_BUFFER_BIT | GL20.GL_DEPTH_BUFFER_BIT);
 
-        // Get mouse position
+        // Get mouse position (convert from screen to viewport coordinates)
         int mouseX = Gdx.input.getX();
-        int mouseY = Gdx.graphics.getBackBufferHeight() - Gdx.input.getY();
+        int mouseY = VIEWPORT_HEIGHT - Gdx.input.getY();
 
         // Check hover states
         boolean playHovered = playButton.contains(mouseX, mouseY);
@@ -179,24 +223,30 @@ public class MenuScreen extends ScalableGameScreen {
         // Draw text with effects
         batch.begin();
 
-        int screenWidth = Gdx.graphics.getBackBufferWidth();
-        int screenHeight = Gdx.graphics.getBackBufferHeight();
+        // Use virtual viewport dimensions for consistent positioning
+        int screenWidth = VIEWPORT_WIDTH;
+        int screenHeight = VIEWPORT_HEIGHT;
 
         // Draw title with pulse effect
         float titlePulse = 1.0f + MathUtils.sin(titlePulseTime * 2f) * 0.05f;
-        titleFont.getData().setScale(5.0f * titlePulse);
+        titleFont.getData().setScale(titleScale * titlePulse);
+
+        // Title positions
+        float titleY = screenHeight - 100;
+        float titleShadowOffset = 6;
 
         // Title shadow
         titleFont.setColor(SHADOW_COLOR);
-        titleFont.draw(batch, "MAZE SAHUR", 6, screenHeight - 94, screenWidth, Align.center, false);
+        titleFont.draw(batch, "MAZE SAHUR", titleShadowOffset, titleY + titleShadowOffset, screenWidth, Align.center, false);
 
         // Title main
         titleFont.setColor(TITLE_COLOR);
-        titleFont.draw(batch, "MAZE SAHUR", 0, screenHeight - 100, screenWidth, Align.center, false);
+        titleFont.draw(batch, "MAZE SAHUR", 0, titleY, screenWidth, Align.center, false);
 
         // Subtitle
+        float subtitleY = screenHeight - 170;
         subtitleFont.draw(batch, "A Horror Maze Experience",
-                0, screenHeight - 170, screenWidth, Align.center, false);
+                0, subtitleY, screenWidth, Align.center, false);
 
         // Draw button text with scaling
         drawButtonText("PLAY", playButton, playScale);
@@ -208,7 +258,7 @@ public class MenuScreen extends ScalableGameScreen {
         subtitleFont.setColor(new Color(0.4f, 0.4f, 0.4f, 0.6f));
         subtitleFont.draw(batch, "Created by Olivier, Luuk, Russell & Tim",
                 0, 30, screenWidth, Align.center, false);
-        subtitleFont.getData().setScale(1.3f);
+        subtitleFont.getData().setScale(subtitleScale);
 
         batch.end();
     }
@@ -224,9 +274,12 @@ public class MenuScreen extends ScalableGameScreen {
         float scaledX = centerX - scaledWidth / 2f;
         float scaledY = centerY - scaledHeight / 2f;
 
+        // Fixed shadow offset for virtual viewport
+        float shadowOffset = 5;
+
         // Draw shadow
         shapeRenderer.setColor(SHADOW_COLOR);
-        shapeRenderer.rect(scaledX + 5, scaledY - 5, scaledWidth, scaledHeight);
+        shapeRenderer.rect(scaledX + shadowOffset, scaledY - shadowOffset, scaledWidth, scaledHeight);
 
         // Draw button
         Color color = hovered ? BUTTON_HOVER_COLOR : BUTTON_COLOR;
@@ -264,15 +317,18 @@ public class MenuScreen extends ScalableGameScreen {
         float centerX = button.x + button.width / 2f;
         float centerY = button.y + button.height / 2f;
 
-        buttonFont.getData().setScale(2.2f * scale);
+        buttonFont.getData().setScale(buttonFontScale * scale);
         glyphLayout.setText(buttonFont, text);
 
         float textX = centerX - glyphLayout.width / 2f;
         float textY = centerY + glyphLayout.height / 2f;
 
+        // Fixed shadow offset for virtual viewport
+        float shadowOffset = 2;
+
         // Text shadow
         buttonFont.setColor(SHADOW_COLOR);
-        buttonFont.draw(batch, text, textX + 2, textY - 2);
+        buttonFont.draw(batch, text, textX + shadowOffset, textY - shadowOffset);
 
         // Text main
         buttonFont.setColor(Color.WHITE);
