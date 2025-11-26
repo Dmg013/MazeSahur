@@ -42,7 +42,7 @@ public class GameUI {
     }
 
     /**
-     * Renders the game UI.
+     * Renders the game UI.f
      *
      * @param gameScreen Reference to the game screen
      * @param player The player entity
@@ -113,6 +113,14 @@ public class GameUI {
             elevatorStateColor = "amber-500";
         }
         GameApp.drawText(FONT_NAME, elevatorStateText, 20, 230, elevatorStateColor);
+
+        // Boost status (if active)
+        if (player.isBoostActive()) {
+            final int boostTimeRemaining = (int) Math.ceil(player.getBoostTimeRemaining());
+            final String boostMultiplier = String.format("%.0f%%", (player.getSpeedMultiplier() - 1.0f) * 100f);
+            GameApp.drawText(FONT_NAME, "SPEED BOOST: +" + boostMultiplier + " (" + boostTimeRemaining + "s)",
+                20, 260, "cyan-500");
+        }
 
         // Exit hint (at bottom)
         GameApp.drawText(FONT_NAME, "ESC to exit", 20, screenHeight - 30, "amber-500");

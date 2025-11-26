@@ -19,6 +19,10 @@ public class Player {
     private final Vector3 velocity;
     private float energy; // Energy for running (0.0 to 1.0)
     private boolean isRunning; // Whether player is currently running
+    private boolean boostActive;
+    private float boostTimer;
+    private float boostSpeedMultiplier;
+    private boolean isSprinting;
 
     /**
      * Creates a new player at the specified position.
@@ -30,6 +34,10 @@ public class Player {
         this.velocity = new Vector3();
         this.energy = 1.0f; // Start with full energy
         this.isRunning = false;
+        this.boostActive = false;
+        this.boostTimer = 0f;
+        this.boostSpeedMultiplier = 1.0f;
+        this.isSprinting = false;
     }
 
     /**
@@ -39,9 +47,10 @@ public class Player {
      * @param delta Time since last frame
      * @param speed Current movement speed
      */
-    public void move(final Vector3 direction, final float delta, final float speed) {
-        // Calculate movement vector
-        final Vector3 movement = direction.cpy().scl(speed * delta);
+    public void move(final Vector3 direction, final float delta) {
+        // Calculate movement vector with boost multiplier
+        final float effectiveSpeed = GameConfig.PLAYER_MOVE_SPEED * boostSpeedMultiplier;
+        final Vector3 movement = direction.cpy().scl(effectiveSpeed * delta);
         velocity.set(movement);
     }
 
@@ -57,6 +66,15 @@ public class Player {
             energy += GameConfig.ENERGY_REGEN_RATE * delta;
             if (energy > 1.0f) {
                 energy = 1.0f;
+            }
+        }
+        // Update boost timer
+        if (boostActive) {
+            boostTimer -= delta;
+            if (boostTimer <= 0f) {
+                boostActive = false;
+                boostTimer = 0f;
+                boostSpeedMultiplier = 1.0f;
             }
         }
 
@@ -187,12 +205,69 @@ public class Player {
     }
 
     /**
+     * Activates a speed boost for the player.
+     *
+     * @param duration Boost duration in seconds
+     * @param multiplier Speed multiplier
+     */
+    public void activateBoost(final float duration, final float multiplier) {
+        this.boostActive = true;
+        this.boostTimer = duration;
+        this.boostSpeedMultiplier = multiplier;
+    }
+
+    /**
+     * Checks if the player currently has an active boost.
+     *
+     * @return true if boost is active
+     */
+    public boolean isBoostActive() {
+        return boostActive;
+    }
+
+    /**
+     * Gets the remaining boost time.
+     *
+     * @return Remaining boost time in seconds
+     */
+    public float getBoostTimeRemaining() {
+        return boostTimer;
+    }
+
+    /**
+     * Gets the current speed multiplier.
+     *
+     * @return Speed multiplier
+     */
+    public float getSpeedMultiplier() {
+        return boostSpeedMultiplier;
+    }
+
+    /**
      * Gets the player's collision radius.
      *
      * @return Collision radius
      */
     public static float getCollisionRadius() {
         return GameConfig.PLAYER_COLLISION_RADIUS;
+    }
+
+    /**
+     * Sets whether the player is sprinting.
+     *
+     * @param sprinting True if sprinting, false otherwise
+     */
+    public void setSprinting(final boolean sprinting) {
+        this.isSprinting = sprinting;
+    }
+
+    /**
+     * Checks if the player is currently sprinting.
+     *
+     * @return True if sprinting
+     */
+    public boolean isSprinting() {
+        return isSprinting;
     }
 }
 

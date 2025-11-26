@@ -27,6 +27,8 @@ import nl.saxion.game.mazesahur.ai.RailNode;
 import nl.saxion.game.mazesahur.config.GameConfig;
 import nl.saxion.game.mazesahur.entity.Enemy;
 import nl.saxion.game.mazesahur.entity.Elevator;
+import nl.saxion.game.mazesahur.entity.PhotoFrame;
+import nl.saxion.game.mazesahur.entity.Boost;
 import nl.saxion.game.mazesahur.world.Maze;
 
 import java.util.ArrayList;
@@ -45,6 +47,7 @@ public class MazeRenderer {
     private final Maze maze;
     private final MaterialManager materialManager;
     private final LightingManager lightingManager;
+    private FootstepManager footstepManager;
 
     private ModelBatch modelBatch;
     private ModelBatch skinnedModelBatch; // Separate batch for skinned animations
@@ -55,8 +58,11 @@ public class MazeRenderer {
     private Model enemyRunningModel;
     private Model ceilingLampModel;
     private Model elevatorModel;
+    private Model photoFrameModel;
+    private Model boostModel;
     private com.badlogic.gdx.graphics.Texture whiteTexture; // 1x1 white texture for elevator (not used for floor)
     private com.badlogic.gdx.graphics.Texture elevatorFloorTexture; // Floor platform texture (only for Mirror material)
+    private com.badlogic.gdx.graphics.Texture elevatorPhotoTexture; // Commemorative elevator photo
     private Model floorPlatformExtensionModel; // Small platform in front of elevator with maze floor texture
     private ModelInstance floorPlatformExtensionInstance;
     private Model wallLeftModel; // Left wall segment behind elevator
@@ -75,6 +81,8 @@ public class MazeRenderer {
     private List<Vector3> lampLightPositions;
     private List<Boolean> lampIsBroken; // Track which lamps are completely broken
     private ModelInstance elevatorInstance;
+    private List<ModelInstance> photoFrameInstances;
+    private List<ModelInstance> boostInstances;
     private AnimationController elevatorAnimationController;
     private AnimationController enemyWalkingAnimationController;
     private AnimationController enemyRunningAnimationController;
@@ -104,6 +112,8 @@ public class MazeRenderer {
         this.ceilingLampInstances = new ArrayList<>();
         this.lampLightPositions = new ArrayList<>();
         this.lampIsBroken = new ArrayList<>();
+        this.photoFrameInstances = new ArrayList<>();
+        this.boostInstances = new ArrayList<>();
     }
 
     /**
@@ -161,6 +171,10 @@ public class MazeRenderer {
 
         // Load elevator model
         loadElevatorModel();
+
+        // Initialize footstep manager
+        footstepManager = new FootstepManager();
+        footstepManager.initialize();
     }
 
     /**
@@ -852,6 +866,135 @@ public class MazeRenderer {
     }
 
     /**
+     * Loads photo frame models for a given list of photo frame entities.
+     * Creates procedural frames with elevator.jpg texture.
+     *
+     * @param photoFrames List of photo frame entities to create models for
+     */
+    public void loadPhotoFrames(final List<PhotoFrame> photoFrames) {
+        System.out.println("[MazeRenderer] Loading " + photoFrames.size() + " photo frames...");
+
+        // Load elevator photo texture
+        elevatorPhotoTexture = new com.badlogic.gdx.graphics.Texture(
+            Gdx.files.internal("img/elevator.jpg"),
+            true // Generate mipmaps
+        );
+        elevatorPhotoTexture.setFilter(
+            com.badlogic.gdx.graphics.Texture.TextureFilter.MipMapLinearLinear,
+            com.badlogic.gdx.graphics.Texture.TextureFilter.Linear
+        );
+        elevatorPhotoTexture.setWrap(
+            com.badlogic.gdx.graphics.Texture.TextureWrap.ClampToEdge,
+            com.badlogic.gdx.graphics.Texture.TextureWrap.ClampToEdge
+        );
+
+        // Create frame model (thin box for photo, border around edges)
+        final ModelBuilder modelBuilder = new ModelBuilder();
+
+        // Photo material - brighter to stand out in darkness like a photo would
+        final Material photoMaterial = new Material();
+        photoMaterial.set(com.badlogic.gdx.graphics.g3d.attributes.TextureAttribute.createDiffuse(elevatorPhotoTexture));
+        photoMaterial.set(com.badlogic.gdx.graphics.g3d.attributes.ColorAttribute.createDiffuse(1f, 1f, 1f, 1f));
+        photoMaterial.set(com.badlogic.gdx.graphics.g3d.attributes.ColorAttribute.createAmbient(0.9f, 0.9f, 0.9f, 1f));
+        photoMaterial.set(com.badlogic.gdx.graphics.g3d.attributes.ColorAttribute.createSpecular(0.05f, 0.05f, 0.05f, 1f));
+        photoMaterial.set(com.badlogic.gdx.graphics.g3d.attributes.FloatAttribute.createShininess(2.0f));
+
+        // Create photo plane (thin box) - portrait orientation (taller than wide)
+        photoFrameModel = modelBuilder.createBox(
+            0.6f, 0.9f, 0.01f, // Width, Height, Depth (portrait, very thin)
+            photoMaterial,
+            VertexAttributes.Usage.Position
+                | VertexAttributes.Usage.Normal
+                | VertexAttributes.Usage.TextureCoordinates
+        );
+
+        // Create instances for each photo frame
+        photoFrameInstances.clear();
+        for (final PhotoFrame frame : photoFrames) {
+            final ModelInstance frameInstance = new ModelInstance(photoFrameModel);
+
+            // Set position and rotation based on wall face
+            frameInstance.transform.setToTranslation(frame.getPosition());
+            frameInstance.transform.rotate(Vector3.Y, frame.getWallFace().getRotationDegrees());
+
+            photoFrameInstances.add(frameInstance);
+        }
+
+        System.out.println("[MazeRenderer] Photo frames loaded successfully");
+    }
+
+    /**
+     * Loads boost pickup models for a given list of boost entities.
+     * Creates glowing spheres with emissive material.
+     *
+     * @param boosts List of boost entities to create models for
+     */
+    public void loadBoosts(final List<Boost> boosts) {
+        System.out.println("[MazeRenderer] Loading " + boosts.size() + " boost pickups...");
+
+        // Create boost model (glowing sphere)
+        final ModelBuilder modelBuilder = new ModelBuilder();
+
+        // Boost material - bright glowing cyan/blue
+        final Material boostMaterial = new Material();
+        boostMaterial.set(com.badlogic.gdx.graphics.g3d.attributes.ColorAttribute.createDiffuse(0.2f, 0.8f, 1.0f, 1f));
+        boostMaterial.set(com.badlogic.gdx.graphics.g3d.attributes.ColorAttribute.createAmbient(1.0f, 1.0f, 1.0f, 1f));
+        boostMaterial.set(com.badlogic.gdx.graphics.g3d.attributes.ColorAttribute.createEmissive(0.3f, 0.9f, 1.0f, 1f));
+        boostMaterial.set(com.badlogic.gdx.graphics.g3d.attributes.ColorAttribute.createSpecular(0.8f, 0.8f, 1.0f, 1f));
+        boostMaterial.set(com.badlogic.gdx.graphics.g3d.attributes.FloatAttribute.createShininess(16.0f));
+
+        // Create sphere model
+        boostModel = modelBuilder.createSphere(
+            0.4f, 0.4f, 0.4f, // Radius (X, Y, Z)
+            16, 16, // Divisions
+            boostMaterial,
+            VertexAttributes.Usage.Position
+                | VertexAttributes.Usage.Normal
+        );
+
+        // Create instances for each boost
+        boostInstances.clear();
+        for (final Boost boost : boosts) {
+            final ModelInstance boostInstance = new ModelInstance(boostModel);
+            boostInstances.add(boostInstance);
+        }
+
+        System.out.println("[MazeRenderer] Boost pickups loaded successfully");
+    }
+
+    /**
+     * Updates and renders boost pickups with rotation and visibility based on state.
+     *
+     * @param camera The game camera
+     * @param boosts List of boost entities
+     */
+    public void renderBoosts(final PerspectiveCamera camera, final List<Boost> boosts) {
+        if (boosts.size() != boostInstances.size()) {
+            return; // Safety check
+        }
+
+        modelBatch.begin(camera);
+        for (int i = 0; i < boosts.size(); i++) {
+            final Boost boost = boosts.get(i);
+            final ModelInstance instance = boostInstances.get(i);
+
+            // Only render if active
+            if (boost.isActive()) {
+                // Update transform with rotation
+                instance.transform.setToTranslation(boost.getPosition());
+                instance.transform.rotate(Vector3.Y, boost.getRotationAngle());
+
+                // Slight bobbing animation
+                final float bobOffset = (float) Math.sin(boost.getRotationAngle() * 0.05f) * 0.1f;
+                instance.transform.translate(0, bobOffset, 0);
+
+                modelBatch.render(instance);
+            }
+        }
+        modelBatch.end();
+    }
+
+    /**
      * Renders the elevator entity with animation.
      * DEPRECATED: Use renderWithElevator() instead to prevent material bleeding.
      *
@@ -899,6 +1042,11 @@ public class MazeRenderer {
         // Render ceiling lamps
         for (final ModelInstance lamp : ceilingLampInstances) {
             modelBatch.render(lamp);
+        }
+
+        // Render photo frames
+        for (final ModelInstance frame : photoFrameInstances) {
+            modelBatch.render(frame);
         }
 
         // Render elevator in the same batch to prevent material bleeding
@@ -1086,23 +1234,43 @@ public class MazeRenderer {
             spotlightIntensity *= attenuation;
         }
 
-        // Base ambient light (very dark)
-        final float baseAmbient = 0.02f;
+        // Base ambient light (match maze darkness - 0.0005f)
+        final float baseAmbient = 0.0005f;
 
         // Add flashlight contribution
         final float finalBrightness = baseAmbient + spotlightIntensity * 0.8f;
 
-        // Update environment with calculated brightness
+        // Update environment with calculated brightness (reduced multiplier to blend better)
         enemyEnvironment.set(new ColorAttribute(ColorAttribute.AmbientLight,
-            finalBrightness * 1.4f, // Slightly warm tint
-            finalBrightness * 1.4f,
-            finalBrightness * 1.35f,
+            finalBrightness * 1.0f, // Match natural lighting
+            finalBrightness * 1.0f,
+            finalBrightness * 0.95f,
             1f));
     }
 
     /**
-     * Disposes rendering resources.
+     * Updates footstep system based on enemy movement.
+     *
+     * @param delta Time since last frame
+     * @param enemy The enemy entity
      */
+    public void updateFootsteps(final float delta, final Enemy enemy) {
+        if (footstepManager != null) {
+            footstepManager.update(delta, enemy);
+        }
+    }
+
+    /**
+     * Renders footsteps on the floor.
+     *
+     * @param camera The game camera
+     */
+    public void renderFootsteps(final PerspectiveCamera camera) {
+        if (footstepManager != null) {
+            footstepManager.render(camera);
+        }
+    }
+
     /**
      * Renders the rail network for debugging purposes.
      * Shows rail nodes with different colors based on type:
@@ -1224,6 +1392,9 @@ public class MazeRenderer {
         }
         if (shapeRenderer != null) {
             shapeRenderer.dispose();
+        }
+        if (footstepManager != null) {
+            footstepManager.dispose();
         }
     }
 }
