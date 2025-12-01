@@ -23,7 +23,9 @@
       "Bash(mkdir:*)",
       "Bash(cp:*)",
       "WebFetch(domain:libgdx.com)",
-      "Bash(mv:*)"
+      "Bash(mv:*)",
+      "Bash(/tmp/fbx2gltf:*)",
+      "Bash(src/main/resources/fbx-conv:*)"
     ],
     "deny": [],
     "ask": []

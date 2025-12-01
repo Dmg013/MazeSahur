@@ -19,6 +19,8 @@ import com.badlogic.gdx.graphics.g3d.Environment;
 import com.badlogic.gdx.graphics.g3d.attributes.ColorAttribute;
 import com.badlogic.gdx.graphics.glutils.ShapeRenderer;
 import com.badlogic.gdx.math.Vector3;
+import com.badlogic.gdx.math.collision.BoundingBox;
+import com.badlogic.gdx.graphics.g3d.attributes.TextureAttribute;
 import net.mgsx.gltf.loaders.glb.GLBLoader;
 import net.mgsx.gltf.scene3d.scene.SceneAsset;
 import nl.saxion.game.mazesahur.ai.RailDirection;
@@ -90,7 +92,16 @@ public class MazeRenderer {
     private AnimationController enemyRunningAnimationController;
     private Environment enemyEnvironment; // Dark environment for enemy lighting
     private Model remotePlayerModel;
+    private float remotePlayerScale = 1f;
+    private float remotePlayerFootOffset = 0f;
+    private Vector3 remotePlayerRootTranslation = new Vector3();
+    private float remotePlayerAnimClock = 0f;
     private Map<String, ModelInstance> remotePlayerInstances = new ConcurrentHashMap<>();
+    private Map<String, AnimationController> remotePlayerAnimControllers = new ConcurrentHashMap<>();
+    private Map<String, String> remotePlayerCurrentAnim = new ConcurrentHashMap<>();
+    private Map<String, Vector3> remotePlayerPrevPositions = new ConcurrentHashMap<>();
+    private Map<String, Float> remotePlayerSpeedAvg = new ConcurrentHashMap<>();
+    private Map<String, Float> remotePlayerAnimChangeTime = new ConcurrentHashMap<>();
 
     // Lamp flickering
     private float[] lampFlickerTimers;
@@ -180,8 +191,8 @@ public class MazeRenderer {
         footstepManager = new FootstepManager();
         footstepManager.initialize();
 
-        // Build placeholder model for remote players (simple cube)
-        buildRemotePlayerModel();
+        // Load player model for remote players
+        loadPlayerModel();
     }
 
     /**
@@ -254,17 +265,98 @@ public class MazeRenderer {
     }
 
     /**
-     * Builds a simple cube to visualize remote players.
+     * Loads the player 3D model with animations from G3DJ files.
+     * The model includes the base mesh and skeletal animations.
      */
-    private void buildRemotePlayerModel() {
-        final ModelBuilder modelBuilder = new ModelBuilder();
-        remotePlayerModel = modelBuilder.createBox(
-            GameConfig.PLAYER_COLLISION_RADIUS * 2,
-            GameConfig.PLAYER_HEIGHT,
-            GameConfig.PLAYER_COLLISION_RADIUS * 2,
-            new Material(ColorAttribute.createDiffuse(Color.SKY)),
-            VertexAttributes.Usage.Position | VertexAttributes.Usage.Normal
-        );
+    private void loadPlayerModel() {
+        try {
+            System.out.println("[MazeRenderer] Loading player G3DJ model with animations...");
+
+            // Load base character model using LibGDX's G3dModelLoader with JsonReader for G3DJ
+            final com.badlogic.gdx.graphics.g3d.loader.G3dModelLoader loader =
+                new com.badlogic.gdx.graphics.g3d.loader.G3dModelLoader(
+                    new com.badlogic.gdx.utils.JsonReader()
+                );
+            // Use the new IdleNew model as the base mesh/rig so animations match
+            remotePlayerModel = loader.loadModel(
+                Gdx.files.internal("models/player/default/IdleNew.g3dj")
+            );
+
+            System.out.println("[MazeRenderer] Base model loaded: " + remotePlayerModel.meshes.size + " meshes, "
+                + remotePlayerModel.nodes.size + " nodes");
+
+            // Load separate animation files and add them to the model
+            System.out.println("[MazeRenderer] Loading player animations...");
+
+            // Load idle animation (new)
+            final Model idleModel = loader.loadModel(
+                Gdx.files.internal("models/player/default/IdleNew.g3dj")
+            );
+            if (idleModel.animations.size > 0) {
+                final com.badlogic.gdx.graphics.g3d.model.Animation idleAnim = idleModel.animations.get(0);
+                idleAnim.id = "idle";
+                remotePlayerModel.animations.add(idleAnim);
+                System.out.println("[MazeRenderer]   Added 'idle' animation (duration: " + idleAnim.duration + "s)");
+            }
+
+            // Load walking animation (new)
+            final Model walkingModel = loader.loadModel(
+                Gdx.files.internal("models/player/default/WalkingNew.g3dj")
+            );
+            if (walkingModel.animations.size > 0) {
+                final com.badlogic.gdx.graphics.g3d.model.Animation walkingAnim = walkingModel.animations.get(0);
+                walkingAnim.id = "walking";
+                remotePlayerModel.animations.add(walkingAnim);
+                System.out.println("[MazeRenderer]   Added 'walking' animation (duration: " + walkingAnim.duration + "s)");
+            }
+
+            // Ensure materials have a diffuse texture to satisfy shader; keep embedded textures if present
+            System.out.println("[MazeRenderer] Verifying player materials have diffuse textures...");
+            for (com.badlogic.gdx.graphics.g3d.Material mat : remotePlayerModel.materials) {
+                if (mat.get(TextureAttribute.Diffuse) == null) {
+                    mat.set(TextureAttribute.createDiffuse(whiteTexture));
+                    System.out.println("[MazeRenderer]   Added white diffuse to material (was missing): " + mat.id);
+                }
+            }
+
+            // Fit model to engine player height so scale matches local player
+            final ModelInstance tempInstance = new ModelInstance(remotePlayerModel);
+            final BoundingBox bounds = new BoundingBox();
+            tempInstance.calculateBoundingBox(bounds);
+            final Vector3 playerDimensions = bounds.getDimensions(new Vector3());
+            if (playerDimensions.y > 0.0001f) {
+                remotePlayerScale = GameConfig.PLAYER_HEIGHT / playerDimensions.y;
+                remotePlayerFootOffset = -bounds.min.y;
+                System.out.println("[MazeRenderer] Remote player model height: " + playerDimensions.y
+                    + " -> scale set to " + remotePlayerScale + ", foot offset " + remotePlayerFootOffset);
+            } else {
+                remotePlayerScale = 1f;
+                remotePlayerFootOffset = 0f;
+                System.out.println("[MazeRenderer] WARNING: Remote player model height invalid, using scale 1.0");
+            }
+            if (!remotePlayerModel.nodes.isEmpty()) {
+                remotePlayerRootTranslation.set(remotePlayerModel.nodes.first().translation);
+            } else {
+                remotePlayerRootTranslation.set(Vector3.Zero);
+            }
+
+            System.out.println("[MazeRenderer] Player model loaded successfully with " + remotePlayerModel.animations.size + " animations");
+
+        } catch (final Exception e) {
+            System.err.println("[MazeRenderer] ERROR: Failed to load player G3DJ model");
+            e.printStackTrace();
+
+            // Fallback to simple cube
+            System.out.println("[MazeRenderer] Falling back to simple cube model...");
+            final ModelBuilder modelBuilder = new ModelBuilder();
+            remotePlayerModel = modelBuilder.createBox(
+                GameConfig.PLAYER_COLLISION_RADIUS * 2,
+                GameConfig.PLAYER_HEIGHT,
+                GameConfig.PLAYER_COLLISION_RADIUS * 2,
+                new Material(ColorAttribute.createDiffuse(Color.SKY)),
+                VertexAttributes.Usage.Position | VertexAttributes.Usage.Normal
+            );
+        }
     }
 
     /**
@@ -1282,7 +1374,7 @@ public class MazeRenderer {
     }
 
     /**
-     * Renders remote players as simple cubes.
+     * Renders remote players with animated models.
      *
      * @param camera The game camera
      * @param players Remote player states
@@ -1292,29 +1384,154 @@ public class MazeRenderer {
             return;
         }
 
-        // Remove instances that are no longer present
+        // Remove instances and controllers that are no longer present
         remotePlayerInstances.keySet().removeIf(id ->
             players.stream().noneMatch(p -> p.id.equals(id)));
+        remotePlayerAnimControllers.keySet().removeIf(id ->
+            players.stream().noneMatch(p -> p.id.equals(id)));
+        remotePlayerCurrentAnim.keySet().removeIf(id ->
+            players.stream().noneMatch(p -> p.id.equals(id)));
+        remotePlayerPrevPositions.keySet().removeIf(id ->
+            players.stream().noneMatch(p -> p.id.equals(id)));
+        remotePlayerSpeedAvg.keySet().removeIf(id ->
+            players.stream().noneMatch(p -> p.id.equals(id)));
+        remotePlayerAnimChangeTime.keySet().removeIf(id ->
+            players.stream().noneMatch(p -> p.id.equals(id)));
 
-        // Update/create instances
+        final float delta = Gdx.graphics.getDeltaTime();
+        remotePlayerAnimClock += delta;
+
+        // Update/create instances and animations
         for (RemotePlayerState state : players) {
             ModelInstance instance = remotePlayerInstances.get(state.id);
+            AnimationController animController = remotePlayerAnimControllers.get(state.id);
+            Vector3 prevPos = remotePlayerPrevPositions.get(state.id);
+            float smoothedSpeed = remotePlayerSpeedAvg.getOrDefault(state.id, 0f);
+
+            // Create new instance if needed
             if (instance == null) {
                 instance = new ModelInstance(remotePlayerModel);
                 remotePlayerInstances.put(state.id, instance);
+
+                // Create animation controller if model has animations
+                if (remotePlayerModel.animations.size > 0) {
+                    animController = new AnimationController(instance);
+                    remotePlayerAnimControllers.put(state.id, animController);
+                    System.out.println("[MazeRenderer] Created AnimationController for remote player " + state.id);
+                }
             }
+
+            // Derive movement state from position delta (server does not send animation flags)
+            float speed = 0f;
+            if (prevPos != null && delta > 0f) {
+                final float dx = state.x - prevPos.x;
+                final float dz = state.z - prevPos.z;
+                final float dist = (float) Math.sqrt(dx * dx + dz * dz);
+                speed = dist / delta;
+            }
+            // Smooth speed to avoid noisy spikes (EMA)
+            smoothedSpeed += (speed - smoothedSpeed) * 0.25f;
+            remotePlayerSpeedAvg.put(state.id, smoothedSpeed);
+
+            final String currentAnim = remotePlayerCurrentAnim.getOrDefault(state.id, "idle");
+            final float lastChangeTime = remotePlayerAnimChangeTime.getOrDefault(state.id, -1000f);
+
+            // Hysteresis thresholds to prevent walk/idle ping-pong
+            final float walkEnter = 0.1f; // start walking
+            final float walkExit = 0.06f; // drop to idle below this
+
+            String desiredAnim = "idle";
+            float animSpeed = 1.0f;
+
+            if ("walking".equals(currentAnim)) {
+                if (smoothedSpeed > walkExit) {
+                    desiredAnim = "walking";
+                    animSpeed = 1.0f;
+                }
+            } else if (smoothedSpeed > walkEnter) {
+                desiredAnim = "walking";
+                animSpeed = 1.0f;
+            }
+
+            // Enforce minimum time before downgrading animation
+            final float minDuration = 0.55f;
+            if (!desiredAnim.equals(currentAnim)
+                && (remotePlayerAnimClock - lastChangeTime) < minDuration) {
+                desiredAnim = currentAnim;
+                animSpeed = 1.0f;
+            }
+
+            // Update animation based on smoothed movement with hysteresis and minimum duration
+            if (animController != null && remotePlayerModel.animations.size > 0) {
+                final String targetAnim = desiredAnim;
+                final float resolvedAnimSpeed = ("standard run".equals(targetAnim)) ? 1.2f
+                    : ("walking".equals(targetAnim) ? 1.0f : 1.0f);
+
+                final String currentAnimResolved = remotePlayerCurrentAnim.get(state.id);
+                if (!targetAnim.equals(currentAnimResolved)) {
+                    for (int i = 0; i < remotePlayerModel.animations.size; i++) {
+                        if (remotePlayerModel.animations.get(i).id.equalsIgnoreCase(targetAnim)) {
+                            animController.setAnimation(remotePlayerModel.animations.get(i).id, -1);
+                            remotePlayerCurrentAnim.put(state.id, targetAnim);
+                            remotePlayerAnimChangeTime.put(state.id, remotePlayerAnimClock);
+                            System.out.println("[MazeRenderer] Player " + state.id + " animation: " + targetAnim);
+                            break;
+                        }
+                    }
+                }
+
+                animController.update(delta * resolvedAnimSpeed);
+                // Ensure root bone translation stays in-place (prevent baked root motion)
+                if (!instance.nodes.isEmpty()) {
+                    instance.nodes.first().translation.set(remotePlayerRootTranslation);
+                    instance.calculateTransforms();
+                }
+            }
+
+            // Update transform
             instance.transform.idt();
-            instance.transform.translate(state.x, state.y / 2f, state.z);
-            instance.transform.rotate(Vector3.Y, state.yaw);
+            // Place feet on ground based on bounding box min Y and rotate to face forward
+            float baseY = state.y - GameConfig.PLAYER_HEIGHT;
+            if (Math.abs(state.y) < 0.0001f) {
+                baseY = 0f; // Fallback if server did not provide height
+            }
+            instance.transform.translate(
+                state.x,
+                baseY + remotePlayerFootOffset * remotePlayerScale,
+                state.z
+            );
+            instance.transform.rotate(Vector3.Y, 180f - state.yaw);
+
+            // Scale player model to match engine player height
+            instance.transform.scale(remotePlayerScale, remotePlayerScale, remotePlayerScale);
+            // Recalculate transforms after applying instance transform to keep bones aligned
+            instance.calculateTransforms();
+
+            // Store position for next frame to detect movement
+            remotePlayerPrevPositions.put(state.id,
+                prevPos != null ? prevPos.set(state.x, state.y, state.z)
+                    : new Vector3(state.x, state.y, state.z));
         }
 
+        // Render all remote players
         if (!remotePlayerInstances.isEmpty()) {
-            modelBatch.begin(camera);
+            // Use skinnedModelBatch if model has animations, otherwise use regular batch
+            final boolean hasAnimations = remotePlayerModel.animations.size > 0;
+            final ModelBatch batch = hasAnimations ? skinnedModelBatch : modelBatch;
+
+            batch.begin(camera);
             for (ModelInstance instance : remotePlayerInstances.values()) {
-                modelBatch.render(instance);
+                batch.render(instance);
             }
-            modelBatch.end();
+            batch.end();
         }
+    }
+
+    private int animationPriority(final String anim) {
+        if ("walking".equalsIgnoreCase(anim)) {
+            return 1;
+        }
+        return 0;
     }
 
     /**

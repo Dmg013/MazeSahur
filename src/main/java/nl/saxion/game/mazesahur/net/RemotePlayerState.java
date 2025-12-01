@@ -1,7 +1,7 @@
 package nl.saxion.game.mazesahur.net;
 
 /**
- * Simple DTO for player transforms received from the server.
+ * Simple DTO for player transforms and animation state received from the server.
  */
 public class RemotePlayerState {
     public String id;
@@ -10,4 +10,7 @@ public class RemotePlayerState {
     public float y;
     public float z;
     public float yaw;
+    public String animation; // Current animation name ("idle", "walking", "running", etc.)
+    public boolean isMoving; // Whether the player is currently moving
+    public boolean isRunning; // Whether the player is running/sprinting
 }
