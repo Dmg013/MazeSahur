@@ -284,7 +284,7 @@ public class GameScreen extends ScalableGameScreen {
 
         // Render UI (hide during jumpscare)
         if (!jumpscareActive) {
-            gameUI.render(this, player, enemy, elevator, lightingManager);
+            gameUI.render(this, player, enemy, elevator, lightingManager, camera, remotePlayers);
         }
     }
 

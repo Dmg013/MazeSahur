@@ -17,6 +17,7 @@ import com.badlogic.gdx.graphics.g3d.utils.ShaderProvider;
 import com.badlogic.gdx.graphics.g3d.Renderable;
 import com.badlogic.gdx.graphics.g3d.Environment;
 import com.badlogic.gdx.graphics.g3d.attributes.ColorAttribute;
+import com.badlogic.gdx.graphics.g3d.environment.DirectionalLight;
 import com.badlogic.gdx.graphics.glutils.ShapeRenderer;
 import com.badlogic.gdx.math.Vector3;
 import com.badlogic.gdx.math.collision.BoundingBox;
@@ -96,6 +97,8 @@ public class MazeRenderer {
     private float remotePlayerFootOffset = 0f;
     private Vector3 remotePlayerRootTranslation = new Vector3();
     private float remotePlayerAnimClock = 0f;
+    private Environment remotePlayerEnvironment;
+    private DirectionalLight remotePlayerLight;
     private Map<String, ModelInstance> remotePlayerInstances = new ConcurrentHashMap<>();
     private Map<String, AnimationController> remotePlayerAnimControllers = new ConcurrentHashMap<>();
     private Map<String, String> remotePlayerCurrentAnim = new ConcurrentHashMap<>();
@@ -171,6 +174,13 @@ public class MazeRenderer {
         enemyEnvironment = new Environment();
         enemyEnvironment.set(new ColorAttribute(ColorAttribute.AmbientLight, 0.05f, 0.05f, 0.05f, 1f));
         System.out.println("[MazeRenderer] Created dark environment for enemy lighting");
+
+        // Environment for remote players (lit by directional light approximating flashlight)
+        remotePlayerEnvironment = new Environment();
+        remotePlayerEnvironment.set(new ColorAttribute(ColorAttribute.AmbientLight, 0.15f, 0.15f, 0.15f, 1f));
+        remotePlayerLight = new DirectionalLight().set(1f, 1f, 1f, -1f, -0.4f, -1f);
+        remotePlayerEnvironment.add(remotePlayerLight);
+        System.out.println("[MazeRenderer] Created environment for remote players");
 
         // Create debug shape renderer
         shapeRenderer = new ShapeRenderer();
@@ -325,7 +335,7 @@ public class MazeRenderer {
             tempInstance.calculateBoundingBox(bounds);
             final Vector3 playerDimensions = bounds.getDimensions(new Vector3());
             if (playerDimensions.y > 0.0001f) {
-                remotePlayerScale = GameConfig.PLAYER_HEIGHT / playerDimensions.y;
+                remotePlayerScale = (GameConfig.PLAYER_HEIGHT / playerDimensions.y) * 1.1f; // Slightly taller to match eye height
                 remotePlayerFootOffset = -bounds.min.y;
                 System.out.println("[MazeRenderer] Remote player model height: " + playerDimensions.y
                     + " -> scale set to " + remotePlayerScale + ", foot offset " + remotePlayerFootOffset);
@@ -1519,9 +1529,13 @@ public class MazeRenderer {
             final boolean hasAnimations = remotePlayerModel.animations.size > 0;
             final ModelBatch batch = hasAnimations ? skinnedModelBatch : modelBatch;
 
+            // Update directional light to follow camera direction (approx flashlight)
+            final Vector3 dir = camera.direction.cpy().nor();
+            remotePlayerLight.setDirection(-dir.x, -dir.y, -dir.z);
+
             batch.begin(camera);
             for (ModelInstance instance : remotePlayerInstances.values()) {
-                batch.render(instance);
+                batch.render(instance, remotePlayerEnvironment);
             }
             batch.end();
         }
