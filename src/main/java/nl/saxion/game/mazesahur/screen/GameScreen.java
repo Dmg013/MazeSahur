@@ -14,7 +14,6 @@ import nl.saxion.game.mazesahur.net.RemotePlayerState;
 import nl.saxion.game.mazesahur.config.GameConfig;
 import nl.saxion.game.mazesahur.entity.Player;
 import nl.saxion.game.mazesahur.entity.Enemy;
-import nl.saxion.game.mazesahur.entity.Elevator;
 import nl.saxion.game.mazesahur.entity.PhotoFrame;
 import nl.saxion.game.mazesahur.entity.Boost;
 import nl.saxion.game.mazesahur.rendering.LightingManager;
@@ -39,7 +38,6 @@ public class GameScreen extends ScalableGameScreen {
     private final Player player;
     private final Enemy enemy;
     private final Maze maze;
-    private Elevator elevator;
     private final List<PhotoFrame> photoFrames;
     private final List<Boost> boosts;
 
@@ -123,9 +121,6 @@ public class GameScreen extends ScalableGameScreen {
         // Initialize entities
         player = new Player(new Vector3(12f, 3f, 12f));
         enemy = new Enemy(maze, player);
-
-        // Initialize elevator in a valid open position
-        elevator = createElevatorInOpenSpace();
 
         // Initialize photo frames on walls
         photoFrames = createPhotoFramesOnWalls();
@@ -235,7 +230,6 @@ public class GameScreen extends ScalableGameScreen {
             if (!useNetworkEnemy) {
                 enemy.update(delta);
             }
-            elevator.update(delta, player.getPosition()); // Update elevator with player position
             updateCamera();
 
             // Update boosts and check for pickups
@@ -264,8 +258,8 @@ public class GameScreen extends ScalableGameScreen {
         Gdx.gl.glClearColor(0.0f, 0.0f, 0.0f, 1f);
         Gdx.gl.glClear(GL20.GL_COLOR_BUFFER_BIT | GL20.GL_DEPTH_BUFFER_BIT);
 
-        // Render 3D scene (elevator is rendered together with maze to prevent material bleeding)
-        mazeRenderer.renderWithElevator(camera, elevator);
+        // Render 3D scene
+        mazeRenderer.render(camera);
         mazeRenderer.renderEnemy(camera, enemy);
 
         // Render boost pickups
@@ -284,7 +278,7 @@ public class GameScreen extends ScalableGameScreen {
 
         // Render UI (hide during jumpscare)
         if (!jumpscareActive) {
-            gameUI.render(this, player, enemy, elevator, lightingManager, camera, remotePlayers);
+            gameUI.render(this, player, enemy, lightingManager, camera, remotePlayers);
         }
     }
 
@@ -403,50 +397,7 @@ public class GameScreen extends ScalableGameScreen {
     }
 
     /**
-     * Creates an elevator using the maze's guaranteed position finder.
-     * The maze will find a suitable wall and prepare it for the elevator.
-     */
-    private Elevator createElevatorInOpenSpace() {
-        // Player spawns at (12, 3, 12) world coordinates
-        final float playerX = 12f;
-        final float playerZ = 12f;
-
-        final int playerGridX = (int) Math.floor(playerX / Maze.CELL_SIZE);
-        final int playerGridZ = (int) Math.floor(playerZ / Maze.CELL_SIZE);
-
-        // Let the maze find and prepare a guaranteed elevator position
-        final int[] elevatorInfo = maze.findAndPrepareElevatorPosition(playerGridX, playerGridZ);
-
-        // Extract position info
-        final int wallX = elevatorInfo[0];
-        final int wallZ = elevatorInfo[1];
-        final int openX = elevatorInfo[2];
-        final int openZ = elevatorInfo[3];
-        final int direction = elevatorInfo[4];
-
-        // Convert wall position to world coordinates
-        final float[] wallWorldPos = maze.gridToWorld(wallX, wallZ);
-        final float elevatorX = wallWorldPos[0];
-        final float elevatorZ = wallWorldPos[1];
-
-        // Direction names for debug
-        final String[] dirNames = {"North (wall is North)", "East (wall is East)",
-                                   "South (wall is South)", "West (wall is West)"};
-
-        System.out.println("[GameScreen] ===== ELEVATOR SPAWN =====");
-        System.out.println("[GameScreen] Player spawn: (" + playerX + ", " + playerZ + ")");
-        System.out.println("[GameScreen] Elevator grid (IN WALL): (" + wallX + ", " + wallZ + ")");
-        System.out.println("[GameScreen] Elevator world: (" + elevatorX + ", " + elevatorZ + ")");
-        System.out.println("[GameScreen] Open space grid: (" + openX + ", " + openZ + ")");
-        System.out.println("[GameScreen] Door faces: " + dirNames[direction]);
-        System.out.println("[GameScreen] ===========================");
-
-        return new Elevator(maze, elevatorX, elevatorZ);
-    }
-
-    /**
      * Creates photo frames on walls throughout the maze.
-     * Frames contain commemorative photo of the elevator.
      * Spawns randomly with ~10% chance on suitable wall segments.
      */
     private List<PhotoFrame> createPhotoFramesOnWalls() {
@@ -562,7 +513,7 @@ public class GameScreen extends ScalableGameScreen {
     }
 
     /**
-     * Checks collision with maze walls and elevator using circular collision detection.
+     * Checks collision with maze walls using circular collision detection.
      */
     private boolean checkCollision(final Vector3 position) {
         final int gridX = (int) Math.floor(position.x / Maze.CELL_SIZE);
@@ -601,22 +552,11 @@ public class GameScreen extends ScalableGameScreen {
             }
         }
 
-        // Check collision with elevator (only blocks if doors are closed)
-        if (elevator.blocksPosition(position)) {
-            return true;
-        }
-
-        // TODO: Re-enable door frame collision after testing spawn position
-        // Check collision with elevator door frame (walls beside the door)
-        // if (elevator.collidesWithDoorFrame(position, GameConfig.PLAYER_COLLISION_RADIUS)) {
-        //     return true;
-        // }
-
         return false;
     }
 
     /**
-     * Handles non-movement game input (flashlight toggle, exit, elevator control, etc.).
+     * Handles non-movement game input (flashlight toggle, exit, etc.).
      */
     private void handleGameInput() {
         // Toggle flashlight
@@ -633,19 +573,6 @@ public class GameScreen extends ScalableGameScreen {
             showRailNetwork = !showRailNetwork;
             System.out.println("[GameScreen] Rail network visualization: "
                 + (showRailNetwork ? "ON" : "OFF"));
-        }
-
-        // Toggle elevator doors with E key
-        if (Gdx.input.isKeyJustPressed(Input.Keys.E)) {
-            if (elevator != null) {
-                // Check if player is close enough to the elevator
-                final float distanceToElevator = elevator.getDistanceToPlayer(player.getPosition());
-                if (distanceToElevator <= 8.0f) { // Within 8 units
-                    elevator.toggleDoors();
-                } else {
-                    System.out.println("[GameScreen] Too far from elevator to control doors (distance: " + distanceToElevator + ")");
-                }
-            }
         }
 
         // Exit game

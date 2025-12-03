@@ -91,14 +91,15 @@ public class MazeRenderer {
     private AnimationController elevatorAnimationController;
     private AnimationController enemyWalkingAnimationController;
     private AnimationController enemyRunningAnimationController;
-    private Environment enemyEnvironment; // Dark environment for enemy lighting
+    private Environment enemyEnvironment; // Dynamic environment for enemy lighting
+    private com.badlogic.gdx.graphics.g3d.environment.PointLight flashlightPointLight; // Flashlight as point light
+    private final List<com.badlogic.gdx.graphics.g3d.environment.PointLight> ceilingLampLights = new ArrayList<>();
     private Model remotePlayerModel;
     private float remotePlayerScale = 1f;
     private float remotePlayerFootOffset = 0f;
     private Vector3 remotePlayerRootTranslation = new Vector3();
     private float remotePlayerAnimClock = 0f;
     private Environment remotePlayerEnvironment;
-    private DirectionalLight remotePlayerLight;
     private Map<String, ModelInstance> remotePlayerInstances = new ConcurrentHashMap<>();
     private Map<String, AnimationController> remotePlayerAnimControllers = new ConcurrentHashMap<>();
     private Map<String, String> remotePlayerCurrentAnim = new ConcurrentHashMap<>();
@@ -170,17 +171,22 @@ public class MazeRenderer {
         skinnedModelBatch = new ModelBatch(skinnedShaderProvider);
         System.out.println("[MazeRenderer] Created skinned ModelBatch with 60 bone support");
 
-        // Create dark environment for enemy (very low ambient light)
+        // Create environment for enemy and remote players with dynamic lighting
+        // These will be updated each frame with flashlight and ceiling lamp positions
         enemyEnvironment = new Environment();
-        enemyEnvironment.set(new ColorAttribute(ColorAttribute.AmbientLight, 0.05f, 0.05f, 0.05f, 1f));
-        System.out.println("[MazeRenderer] Created dark environment for enemy lighting");
+        enemyEnvironment.set(new ColorAttribute(ColorAttribute.AmbientLight, 0.002f, 0.002f, 0.0025f, 1f));
 
-        // Environment for remote players (lit by directional light approximating flashlight)
+        // Create flashlight as a point light for skinned models
+        flashlightPointLight = new com.badlogic.gdx.graphics.g3d.environment.PointLight();
+        flashlightPointLight.set(1.4f, 1.4f, 1.35f, 0, 0, 0, 15f); // Warm white, intensity 15
+        enemyEnvironment.add(flashlightPointLight);
+
+        System.out.println("[MazeRenderer] Created dynamic environment for enemy lighting");
+
         remotePlayerEnvironment = new Environment();
-        remotePlayerEnvironment.set(new ColorAttribute(ColorAttribute.AmbientLight, 0.15f, 0.15f, 0.15f, 1f));
-        remotePlayerLight = new DirectionalLight().set(1f, 1f, 1f, -1f, -0.4f, -1f);
-        remotePlayerEnvironment.add(remotePlayerLight);
-        System.out.println("[MazeRenderer] Created environment for remote players");
+        remotePlayerEnvironment.set(new ColorAttribute(ColorAttribute.AmbientLight, 0.002f, 0.002f, 0.0025f, 1f));
+        remotePlayerEnvironment.add(flashlightPointLight); // Share flashlight with remote players
+        System.out.println("[MazeRenderer] Created dynamic environment for remote players");
 
         // Create debug shape renderer
         shapeRenderer = new ShapeRenderer();
@@ -597,53 +603,10 @@ public class MazeRenderer {
         // Pass lamp positions to shader for lighting
         setupLampLights();
 
-        // Create and pass maze data to shader for shadow casting
-        createMazeShadowTexture();
-    }
+        // Create ceiling lamp point lights for skinned models
+        setupLampLightsForSkinnedModels();
 
-    /**
-     * Creates a texture representing the maze for shadow casting.
-     * White pixels = walls, Black pixels = paths
-     */
-    private void createMazeShadowTexture() {
-        final int width = maze.getWidth();
-        final int height = maze.getHeight();
-
-        // Create pixel data (RGBA format)
-        final com.badlogic.gdx.graphics.Pixmap pixmap =
-            new com.badlogic.gdx.graphics.Pixmap(width, height, com.badlogic.gdx.graphics.Pixmap.Format.RGBA8888);
-
-        // Fill pixmap with maze data
-        for (int z = 0; z < height; z++) {
-            for (int x = 0; x < width; x++) {
-                if (maze.isWall(x, z)) {
-                    pixmap.setColor(1, 1, 1, 1); // White = wall
-                } else {
-                    pixmap.setColor(0, 0, 0, 1); // Black = path
-                }
-                pixmap.drawPixel(x, z);
-            }
-        }
-
-        // Create texture from pixmap
-        final com.badlogic.gdx.graphics.Texture mazeTexture =
-            new com.badlogic.gdx.graphics.Texture(pixmap);
-        mazeTexture.setFilter(
-            com.badlogic.gdx.graphics.Texture.TextureFilter.Nearest,
-            com.badlogic.gdx.graphics.Texture.TextureFilter.Nearest
-        );
-
-        pixmap.dispose();
-
-        // Pass to shader
-        lightingManager.getShader().setMazeData(
-            mazeTexture,
-            (float) width,
-            (float) height,
-            GameConfig.CELL_SIZE
-        );
-
-        System.out.println("[MazeRenderer] Created maze shadow texture: " + width + "x" + height);
+        // Note: Maze shadow texture removed - shadow casting disabled for performance
     }
 
     /**
@@ -678,6 +641,65 @@ public class MazeRenderer {
 
         lightingManager.getShader().setPointLights(positions, colors, intensities, numLights);
         System.out.println("[MazeRenderer] Configured " + numLights + " lamp lights in shader");
+    }
+
+    /**
+     * Creates ceiling lamp point lights for skinned models (enemy, remote players).
+     * Limits to 5 closest lamps for performance (LibGDX supports up to 5 point lights by default).
+     */
+    private void setupLampLightsForSkinnedModels() {
+        // Add up to 5 ceiling lamp lights (LibGDX DefaultShader limit)
+        final int maxLights = Math.min(5, lampLightPositions.size());
+
+        for (int i = 0; i < maxLights; i++) {
+            final com.badlogic.gdx.graphics.g3d.environment.PointLight lampLight =
+                new com.badlogic.gdx.graphics.g3d.environment.PointLight();
+
+            // Start with default position and intensity
+            final Vector3 position = lampLightPositions.get(i);
+            final boolean isBroken = lampIsBroken.get(i);
+
+            if (isBroken) {
+                lampLight.set(1.0f, 0.85f, 0.5f, position.x, position.y, position.z, 0f);
+            } else {
+                lampLight.set(1.0f, 0.85f, 0.5f, position.x, position.y, position.z, 12f);
+            }
+
+            ceilingLampLights.add(lampLight);
+            enemyEnvironment.add(lampLight);
+            remotePlayerEnvironment.add(lampLight);
+        }
+
+        System.out.println("[MazeRenderer] Added " + maxLights + " ceiling lamp lights to skinned model environments");
+    }
+
+    /**
+     * Updates the dynamic lighting for skinned models based on player camera position.
+     * Should be called each frame before rendering enemy/remote players.
+     *
+     * @param cameraPosition Player's camera position (flashlight origin)
+     * @param cameraDirection Player's camera direction (flashlight direction)
+     */
+    public void updateSkinnedModelLighting(final Vector3 cameraPosition, final Vector3 cameraDirection) {
+        // Update flashlight position (use camera position as flashlight is on player)
+        flashlightPointLight.position.set(cameraPosition);
+
+        // Update nearby ceiling lamp intensities (use flicker values)
+        for (int i = 0; i < ceilingLampLights.size(); i++) {
+            final com.badlogic.gdx.graphics.g3d.environment.PointLight lampLight = ceilingLampLights.get(i);
+            final Vector3 lampPos = lampLightPositions.get(i);
+
+            // Update lamp position (in case it changed, though usually static)
+            lampLight.position.set(lampPos);
+
+            // Update intensity based on flicker
+            if (lampIsBroken.get(i)) {
+                lampLight.intensity = 0f;
+            } else if (lampFlickerIntensities != null && i < lampFlickerIntensities.length) {
+                // Use current flicker intensity (scaled up for visibility)
+                lampLight.intensity = lampFlickerIntensities[i] * 12f;
+            }
+        }
     }
 
     /**
@@ -738,9 +760,10 @@ public class MazeRenderer {
                 flicker = flicker * 0.6f + variation * 0.3f + spike * 0.3f;
 
                 // Map to intensity range based on how broken the lamp is
-                // More broken lamps go darker (0.0 to 0.8) vs less broken (0.4 to 1.2)
-                float baseIntensity = 0.6f - brokenLevel * 0.3f;
-                float flickerRange = 0.5f + brokenLevel * 0.4f;
+                // Increased base intensity for better visibility
+                // More broken lamps go darker (0.2 to 1.2) vs less broken (0.8 to 2.0)
+                float baseIntensity = 1.0f - brokenLevel * 0.4f;
+                float flickerRange = 0.8f + brokenLevel * 0.6f;
                 float intensity = baseIntensity + flicker * flickerRange;
 
                 // Some lamps occasionally go completely dark (electrical failure)
@@ -751,8 +774,8 @@ public class MazeRenderer {
                     }
                 }
 
-                // Clamp to safe range (allow complete darkness for broken effect)
-                intensity = Math.max(0.0f, Math.min(1.2f, intensity));
+                // Clamp to safe range (allow complete darkness for broken effect, but increased max)
+                intensity = Math.max(0.0f, Math.min(2.5f, intensity));
 
                 lampFlickerIntensities[i] = intensity;
                 intensities[i] = intensity;
@@ -1308,8 +1331,8 @@ public class MazeRenderer {
                                       GameConfig.ENEMY_GLB_SCALE,
                                       GameConfig.ENEMY_GLB_SCALE);
 
-        // Update enemy lighting based on player flashlight
-        updateEnemyLighting(camera, enemy);
+        // Update dynamic lighting for skinned models (flashlight + ceiling lamps)
+        updateSkinnedModelLighting(camera.position, camera.direction);
 
         // Render with ESP (no depth test for visibility through walls)
         // Use skinnedModelBatch for proper bone animation support
@@ -1320,56 +1343,6 @@ public class MazeRenderer {
         Gdx.gl.glEnable(com.badlogic.gdx.graphics.GL20.GL_DEPTH_TEST);
     }
 
-    /**
-     * Updates enemy lighting to simulate flashlight illumination.
-     * Calculates brightness based on distance and angle to flashlight.
-     */
-    private void updateEnemyLighting(final PerspectiveCamera camera, final Enemy enemy) {
-        // Get flashlight position (camera position)
-        final Vector3 flashlightPos = camera.position;
-        final Vector3 flashlightDir = camera.direction;
-        final Vector3 enemyPos = enemy.getPosition();
-
-        // Calculate vector from flashlight to enemy
-        final Vector3 toEnemy = enemyPos.cpy().sub(flashlightPos);
-        final float distance = toEnemy.len();
-        toEnemy.nor();
-
-        // Calculate angle between flashlight direction and enemy direction
-        final float angle = flashlightDir.dot(toEnemy);
-
-        // Spotlight cone parameters (matching SpotlightShader)
-        final float innerCone = (float) Math.cos(Math.toRadians(25.0));
-        final float outerCone = (float) Math.cos(Math.toRadians(35.0));
-
-        // Calculate spotlight intensity based on angle
-        float spotlightIntensity = 0f;
-        if (angle > outerCone) {
-            if (angle > innerCone) {
-                spotlightIntensity = 1.0f; // Full intensity in inner cone
-            } else {
-                // Smooth falloff between inner and outer cone
-                spotlightIntensity = (angle - outerCone) / (innerCone - outerCone);
-            }
-
-            // Apply distance attenuation
-            final float attenuation = 1.0f / (1.0f + 0.015f * distance * distance);
-            spotlightIntensity *= attenuation;
-        }
-
-        // Base ambient light (match maze darkness - 0.0005f)
-        final float baseAmbient = 0.0005f;
-
-        // Add flashlight contribution
-        final float finalBrightness = baseAmbient + spotlightIntensity * 0.8f;
-
-        // Update environment with calculated brightness (reduced multiplier to blend better)
-        enemyEnvironment.set(new ColorAttribute(ColorAttribute.AmbientLight,
-            finalBrightness * 1.0f, // Match natural lighting
-            finalBrightness * 1.0f,
-            finalBrightness * 0.95f,
-            1f));
-    }
 
     /**
      * Updates footstep system based on enemy movement.
@@ -1529,9 +1502,7 @@ public class MazeRenderer {
             final boolean hasAnimations = remotePlayerModel.animations.size > 0;
             final ModelBatch batch = hasAnimations ? skinnedModelBatch : modelBatch;
 
-            // Update directional light to follow camera direction (approx flashlight)
-            final Vector3 dir = camera.direction.cpy().nor();
-            remotePlayerLight.setDirection(-dir.x, -dir.y, -dir.z);
+            // Dynamic lighting is now handled by updateSkinnedModelLighting() method
 
             batch.begin(camera);
             for (ModelInstance instance : remotePlayerInstances.values()) {

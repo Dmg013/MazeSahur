@@ -37,10 +37,10 @@ public class SpotlightShader implements Shader {
     private float spotAttenuation = 0.015f;
     private boolean enabled = true;
 
-    // Ambient and moonlight (very dark for horror atmosphere, slight visibility)
-    private final Vector3 ambientLight = new Vector3(0.0005f, 0.0005f, 0.0007f);
+    // Ambient and moonlight (slightly increased for better visibility with ceiling lamps)
+    private final Vector3 ambientLight = new Vector3(0.002f, 0.002f, 0.0025f);
     private final Vector3 moonDirection = new Vector3(-0.2f, -1f, -0.3f);
-    private final Vector3 moonColor = new Vector3(0.002f, 0.0025f, 0.003f);
+    private final Vector3 moonColor = new Vector3(0.005f, 0.006f, 0.007f);
 
     // Fog parameters for horror atmosphere
     private final Vector3 fogColor = new Vector3(0.0f, 0.0f, 0.0f); // Pure black fog
@@ -56,12 +56,6 @@ public class SpotlightShader implements Shader {
     private final Vector3[] pointLightPositions = new Vector3[20];
     private final Vector3[] pointLightColors = new Vector3[20];
     private final float[] pointLightIntensities = new float[20];
-
-    // Maze data for shadow casting
-    private com.badlogic.gdx.graphics.Texture mazeTexture;
-    private float mazeWidth;
-    private float mazeHeight;
-    private float cellSize;
 
     public SpotlightShader() {
         // Initialize point light arrays
@@ -169,14 +163,7 @@ public class SpotlightShader implements Shader {
             }
         }
 
-        // Set maze data for shadow casting
-        if (mazeTexture != null) {
-            final int mazeTexUnit = context.textureBinder.bind(mazeTexture);
-            program.setUniformi("u_mazeTexture", mazeTexUnit);
-            program.setUniformf("u_mazeWidth", mazeWidth);
-            program.setUniformf("u_mazeHeight", mazeHeight);
-            program.setUniformf("u_cellSize", cellSize);
-        }
+        // Note: Maze texture uniforms removed - shadow casting disabled for performance
 
         context.setDepthTest(GL20.GL_LEQUAL);
         context.setCullFace(GL20.GL_BACK);
@@ -408,22 +395,6 @@ public class SpotlightShader implements Shader {
             this.pointLightColors[i].set(colors[i]);
             this.pointLightIntensities[i] = intensities[i];
         }
-    }
-
-    /**
-     * Sets the maze data for shadow casting.
-     *
-     * @param mazeTexture Texture where white = walls, black = paths
-     * @param width Maze width in cells
-     * @param height Maze height in cells
-     * @param cellSize Size of each cell in world units
-     */
-    public void setMazeData(final com.badlogic.gdx.graphics.Texture mazeTexture,
-                            final float width, final float height, final float cellSize) {
-        this.mazeTexture = mazeTexture;
-        this.mazeWidth = width;
-        this.mazeHeight = height;
-        this.cellSize = cellSize;
     }
 }
 
