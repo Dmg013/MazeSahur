@@ -4,12 +4,14 @@ import com.badlogic.gdx.Gdx;
 import com.badlogic.gdx.graphics.Color;
 import com.badlogic.gdx.graphics.GL20;
 import com.badlogic.gdx.graphics.glutils.ShapeRenderer;
+import com.badlogic.gdx.graphics.PerspectiveCamera;
+import com.badlogic.gdx.math.Vector3;
 import nl.saxion.game.mazesahur.config.GameConfig;
 import nl.saxion.game.mazesahur.entity.Enemy;
 import nl.saxion.game.mazesahur.entity.Player;
-import nl.saxion.game.mazesahur.entity.Elevator;
 import nl.saxion.game.mazesahur.rendering.LightingManager;
 import nl.saxion.game.mazesahur.screen.GameScreen;
+import nl.saxion.game.mazesahur.net.RemotePlayerState;
 import nl.saxion.gameapp.GameApp;
 
 /**w=
@@ -42,16 +44,18 @@ public class GameUI {
     }
 
     /**
-     * Renders the game UI.f
+     * Renders the game UI.
      *
      * @param gameScreen Reference to the game screen
      * @param player The player entity
      * @param enemy The enemy entity
-     * @param elevator The elevator entity
      * @param lightingManager The lighting manager
+     * @param camera The main game camera
+     * @param remotePlayers Remote players to show names for (nullable)
      */
     public void render(final GameScreen gameScreen, final Player player,
-                       final Enemy enemy, final Elevator elevator, final LightingManager lightingManager) {
+                       final Enemy enemy, final LightingManager lightingManager,
+                       final PerspectiveCamera camera, final java.util.List<RemotePlayerState> remotePlayers) {
         // Reset OpenGL state for 2D rendering
         com.badlogic.gdx.Gdx.gl.glDisable(com.badlogic.gdx.graphics.GL20.GL_DEPTH_TEST);
         com.badlogic.gdx.Gdx.gl.glEnable(com.badlogic.gdx.graphics.GL20.GL_BLEND);
@@ -98,32 +102,34 @@ public class GameUI {
                 20, 170, "red-500");
         }
 
-        // Elevator info (distance tracker like Sahur)
-        final float elevatorDistance = elevator.getDistanceToPlayer(player.getPosition());
-        GameApp.drawText(FONT_NAME, "Elevator distance: " + (int)elevatorDistance + "m",
-            20, 200, "blue-500");
-
-        // Elevator state
-        String elevatorStateText = "Elevator: " + elevator.getCurrentState();
-        String elevatorStateColor = "gray-500";
-        if (elevator.getCurrentState() == Elevator.ElevatorState.OPEN) {
-            elevatorStateColor = "green-500";
-        } else if (elevator.getCurrentState() == Elevator.ElevatorState.OPENING
-                   || elevator.getCurrentState() == Elevator.ElevatorState.CLOSING) {
-            elevatorStateColor = "amber-500";
-        }
-        GameApp.drawText(FONT_NAME, elevatorStateText, 20, 230, elevatorStateColor);
-
         // Boost status (if active)
         if (player.isBoostActive()) {
             final int boostTimeRemaining = (int) Math.ceil(player.getBoostTimeRemaining());
             final String boostMultiplier = String.format("%.0f%%", (player.getSpeedMultiplier() - 1.0f) * 100f);
             GameApp.drawText(FONT_NAME, "SPEED BOOST: +" + boostMultiplier + " (" + boostTimeRemaining + "s)",
-                20, 260, "cyan-500");
+                20, 200, "cyan-500");
         }
 
         // Exit hint (at bottom)
         GameApp.drawText(FONT_NAME, "ESC to exit", 20, screenHeight - 30, "amber-500");
+
+        // Draw remote player names above heads
+        if (remotePlayers != null && camera != null) {
+            final Vector3 world = new Vector3();
+            final Vector3 screen = new Vector3();
+            for (RemotePlayerState rp : remotePlayers) {
+                if (rp == null || rp.name == null) continue;
+                world.set(rp.x, rp.y + GameConfig.PLAYER_HEIGHT + 0.5f, rp.z);
+                screen.set(world);
+                camera.project(screen);
+                // Only draw if in front of camera and on screen
+                if (screen.z > 0 && screen.x >= 0 && screen.x <= screenWidth && screen.y >= 0 && screen.y <= screenHeight) {
+                    final float drawX = screen.x;
+                    final float drawY = screenHeight - screen.y; // Convert to UI coord system
+                    GameApp.drawText(FONT_NAME, rp.name, drawX, drawY, "white");
+                }
+            }
+        }
 
         GameApp.endSpriteRendering();
 
@@ -200,4 +206,3 @@ public class GameUI {
         }
     }
 }
-

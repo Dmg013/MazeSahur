@@ -34,12 +34,6 @@
     uniform vec3 u_pointLightColors[20];
     uniform float u_pointLightIntensities[20];
 
-    // Maze shadow casting
-    uniform sampler2D u_mazeTexture;
-    uniform float u_mazeWidth;
-    uniform float u_mazeHeight;
-    uniform float u_cellSize;
-
     // Fog parameters
     uniform vec3 u_fogColor;          // Fog color (dark)
     uniform float u_fogDensity;       // Fog density
@@ -52,92 +46,6 @@
     varying vec3 v_tangent;
     varying vec3 v_bitangent;
     varying vec3 v_viewDir;
-
-    // Optimized shadow ray casting - single ray check
-    bool castShadowRay(vec3 surfacePos, vec3 lightPos) {
-        // Calculate ray from surface to light
-        vec3 rayDir = lightPos - surfacePos;
-        float rayLength = length(rayDir);
-        rayDir = normalize(rayDir);
-
-        // Use adaptive step size - VERY large steps for potato PC performance
-        float stepSize = u_cellSize * 0.6; // Even larger steps for better performance
-        int maxSteps = int(rayLength / stepSize) + 1;
-
-        // AGGRESSIVE cap for potato PCs (lights far away don't need perfect shadows)
-        if (maxSteps > 20) {
-            maxSteps = 20;
-            stepSize = rayLength / 20.0;
-        }
-
-        // Start ray slightly offset to avoid self-shadowing
-        for (int step = 1; step < maxSteps; step++) {
-            vec3 samplePos = surfacePos + rayDir * (float(step) * stepSize);
-
-            // Convert world position to maze grid coordinates
-            float gridX = samplePos.x / u_cellSize;
-            float gridZ = samplePos.z / u_cellSize;
-
-            // Check bounds - early exit if out of maze
-            if (gridX < 0.0 || gridX >= u_mazeWidth || gridZ < 0.0 || gridZ >= u_mazeHeight) {
-                continue;
-            }
-
-            // Sample maze texture (walls are white, paths are black)
-            vec2 mazeUV = vec2(gridX / u_mazeWidth, gridZ / u_mazeHeight);
-            float wallValue = texture2D(u_mazeTexture, mazeUV).r;
-
-            // If we hit a wall, we're in shadow
-            if (wallValue > 0.5) {
-                return true;
-            }
-        }
-
-        return false; // No wall blocking, not in shadow
-    }
-
-    // Soft shadow calculation with optimized PCF (Percentage Closer Filtering)
-    // Returns 0.0 (fully shadowed) to 1.0 (fully lit)
-    float getSoftShadow(vec3 surfacePos, vec3 lightPos) {
-        // First do a quick center check - if fully lit, no need for more samples
-        bool centerShadow = castShadowRay(surfacePos, lightPos);
-
-        // If center is lit, do a quick edge check to see if we're near shadow boundary
-        if (!centerShadow) {
-            // Calculate perpendicular vectors for edge sampling
-            vec3 toLightDir = normalize(lightPos - surfacePos);
-            vec3 perpendicular1 = normalize(cross(toLightDir, vec3(0.0, 1.0, 0.0)));
-
-            if (length(perpendicular1) < 0.1) {
-                perpendicular1 = normalize(cross(toLightDir, vec3(1.0, 0.0, 0.0)));
-            }
-
-            vec3 perpendicular2 = normalize(cross(toLightDir, perpendicular1));
-            float kernelSize = u_cellSize * 0.2;
-
-            // Quick 4-sample check at edges
-            bool edge1 = castShadowRay(surfacePos, lightPos + perpendicular1 * kernelSize);
-            bool edge2 = castShadowRay(surfacePos, lightPos - perpendicular1 * kernelSize);
-            bool edge3 = castShadowRay(surfacePos, lightPos + perpendicular2 * kernelSize);
-            bool edge4 = castShadowRay(surfacePos, lightPos - perpendicular2 * kernelSize);
-
-            // If all edges match center, we're in uniform area - return early
-            if (!edge1 && !edge2 && !edge3 && !edge4) {
-                return 1.0; // Fully lit
-            }
-
-            // We're near an edge, return soft transition (5-sample average)
-            float shadowSum = 1.0; // Center is lit
-            shadowSum += edge1 ? 0.0 : 1.0;
-            shadowSum += edge2 ? 0.0 : 1.0;
-            shadowSum += edge3 ? 0.0 : 1.0;
-            shadowSum += edge4 ? 0.0 : 1.0;
-            return shadowSum / 5.0;
-        }
-
-        // Center is shadowed, return fully shadowed
-        return 0.0;
-    }
 
     // Parallax Occlusion Mapping function - conservative version
     vec2 parallaxOcclusionMapping(vec2 texCoords, vec3 viewDir) {
@@ -287,20 +195,21 @@
 
     vec3 spotlight = (diffuse + specular) * intensity * attenuation * u_spotIntensity;
 
-    // ===== POINT LIGHTS (Ceiling lamps) with spotlight cone effect and soft shadows =====
+    // ===== POINT LIGHTS (Ceiling lamps) with spotlight cone effect =====
+    // Shadow casting disabled for performance - lights work better without expensive raycasting
     vec3 pointLighting = vec3(0.0);
     for (int i = 0; i < u_numPointLights; i++) {
         vec3 lightDir = u_pointLightPositions[i] - v_position;
         float distance = length(lightDir);
         lightDir = normalize(lightDir);
 
-        // Ceiling lamps shine downward in a cone (spotlight effect)
+        // Ceiling lamps shine downward in a wide cone
         vec3 lampDirection = vec3(0.0, -1.0, 0.0); // Always point down
         float lampTheta = dot(-lightDir, lampDirection);
 
-        // Spotlight cone: inner 45 degrees, outer 65 degrees (wider than flashlight)
-        float lampInnerCutoff = cos(radians(45.0));
-        float lampOuterCutoff = cos(radians(65.0));
+        // Wider cone for better coverage: inner 50 degrees, outer 80 degrees
+        float lampInnerCutoff = cos(radians(50.0));
+        float lampOuterCutoff = cos(radians(80.0));
         float lampEpsilon = lampInnerCutoff - lampOuterCutoff;
         float lampConeIntensity = clamp((lampTheta - lampOuterCutoff) / lampEpsilon, 0.0, 1.0);
 
@@ -309,16 +218,8 @@
             continue;
         }
 
-        // Soft shadow calculation (0.0 = fully shadowed, 1.0 = fully lit)
-        float shadowFactor = getSoftShadow(v_position, u_pointLightPositions[i]);
-
-        // Skip if fully shadowed (optimization)
-        if (shadowFactor < 0.01) {
-            continue;
-        }
-
-        // Distance attenuation (strong quadratic falloff - lamps don't reach far)
-        float attenuation = 1.0 / (1.0 + 0.25 * distance + 0.05 * distance * distance);
+        // Simplified distance attenuation - lamps reach further now
+        float attenuation = 1.0 / (1.0 + 0.1 * distance + 0.02 * distance * distance);
 
         // Diffuse lighting
         float diff = max(dot(normal, lightDir), 0.0);
@@ -327,10 +228,10 @@
         vec3 pointHalfwayDir = normalize(lightDir + viewDir);
         float pointSpec = pow(max(dot(normal, pointHalfwayDir), 0.0), shininess);
 
-        // Add point light contribution with soft shadow and cone effect
-        vec3 diffuse = u_pointLightColors[i] * diff * texColor.rgb * u_pointLightIntensities[i];
+        // Add point light contribution with cone effect (increased intensity)
+        vec3 diffuse = u_pointLightColors[i] * diff * texColor.rgb * u_pointLightIntensities[i] * 2.0;
         vec3 specular = u_pointLightColors[i] * pointSpec * specularStrength * u_pointLightIntensities[i];
-        pointLighting += (diffuse + specular) * attenuation * shadowFactor * lampConeIntensity;
+        pointLighting += (diffuse + specular) * attenuation * lampConeIntensity;
     }
 
     // ===== EMISSIVE GLOW (Self-illumination for lamps) =====
@@ -339,7 +240,7 @@
         // Sample emissive texture
         vec3 emissiveMap = texture2D(u_emissiveTexture, texCoords).rgb;
         // Apply emissive color and make it very bright (visible even with flashlight)
-        emissiveGlow = emissiveMap * u_emissiveColor * 8.0; // Strong boost for visibility
+        emissiveGlow = emissiveMap * u_emissiveColor * 12.0; // Strong boost for visibility
     }
 
     // Combine all lighting + emissive (emissive is NOT affected by lighting/shadows)

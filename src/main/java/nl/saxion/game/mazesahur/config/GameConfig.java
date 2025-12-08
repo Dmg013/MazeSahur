@@ -70,4 +70,3 @@ public final class GameConfig {
     public static final float FOG_START_DISTANCE = 8f;
     public static final float FOG_END_DISTANCE = 35f;
 }
-

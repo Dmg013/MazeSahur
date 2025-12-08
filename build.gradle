@@ -20,6 +20,9 @@ dependencies {
 
     // GLTF/GLB model loader for LibGDX
     implementation 'com.github.mgsx-dev.gdx-gltf:core:2.2.1'
+
+    // JSON handling for multiplayer client
+    implementation 'com.fasterxml.jackson.core:jackson-databind:2.17.2'
 }
 
 application {

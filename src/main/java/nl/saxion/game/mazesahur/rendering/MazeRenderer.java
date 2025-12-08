@@ -17,8 +17,13 @@ import com.badlogic.gdx.graphics.g3d.utils.ShaderProvider;
 import com.badlogic.gdx.graphics.g3d.Renderable;
 import com.badlogic.gdx.graphics.g3d.Environment;
 import com.badlogic.gdx.graphics.g3d.attributes.ColorAttribute;
+import com.badlogic.gdx.graphics.g3d.environment.DirectionalLight;
 import com.badlogic.gdx.graphics.glutils.ShapeRenderer;
 import com.badlogic.gdx.math.Vector3;
+import com.badlogic.gdx.math.collision.BoundingBox;
+import com.badlogic.gdx.graphics.g3d.attributes.TextureAttribute;
+import com.badlogic.gdx.graphics.Texture;
+import com.badlogic.gdx.files.FileHandle;
 import net.mgsx.gltf.loaders.glb.GLBLoader;
 import net.mgsx.gltf.scene3d.scene.SceneAsset;
 import nl.saxion.game.mazesahur.ai.RailDirection;
@@ -34,6 +39,8 @@ import nl.saxion.game.mazesahur.world.Maze;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
+import java.util.concurrent.ConcurrentHashMap;
+import nl.saxion.game.mazesahur.net.RemotePlayerState;
 
 /**
  * Handles rendering of the 3D maze and entities.
@@ -86,7 +93,24 @@ public class MazeRenderer {
     private AnimationController elevatorAnimationController;
     private AnimationController enemyWalkingAnimationController;
     private AnimationController enemyRunningAnimationController;
-    private Environment enemyEnvironment; // Dark environment for enemy lighting
+    private Environment enemyEnvironment; // Dynamic environment for enemy lighting
+    private com.badlogic.gdx.graphics.g3d.environment.PointLight flashlightPointLight; // Flashlight as point light
+    private final List<com.badlogic.gdx.graphics.g3d.environment.PointLight> ceilingLampLights = new ArrayList<>();
+    // Character models (one per character type)
+    private final Map<String, Model> characterModels = new java.util.HashMap<>();
+    private final Map<String, Float> characterScales = new java.util.HashMap<>();
+    private final Map<String, Float> characterFootOffsets = new java.util.HashMap<>();
+    private final Map<String, Vector3> characterRootTranslations = new java.util.HashMap<>();
+
+    private float remotePlayerAnimClock = 0f;
+    private Environment remotePlayerEnvironment;
+    private Map<String, ModelInstance> remotePlayerInstances = new ConcurrentHashMap<>();
+    private Map<String, String> remotePlayerCharacterTypes = new ConcurrentHashMap<>();
+    private Map<String, AnimationController> remotePlayerAnimControllers = new ConcurrentHashMap<>();
+    private Map<String, String> remotePlayerCurrentAnim = new ConcurrentHashMap<>();
+    private Map<String, Vector3> remotePlayerPrevPositions = new ConcurrentHashMap<>();
+    private Map<String, Float> remotePlayerSpeedAvg = new ConcurrentHashMap<>();
+    private Map<String, Float> remotePlayerAnimChangeTime = new ConcurrentHashMap<>();
 
     // Lamp flickering
     private float[] lampFlickerTimers;
@@ -152,10 +176,22 @@ public class MazeRenderer {
         skinnedModelBatch = new ModelBatch(skinnedShaderProvider);
         System.out.println("[MazeRenderer] Created skinned ModelBatch with 60 bone support");
 
-        // Create dark environment for enemy (very low ambient light)
+        // Create environment for enemy and remote players with dynamic lighting
+        // These will be updated each frame with flashlight and ceiling lamp positions
         enemyEnvironment = new Environment();
-        enemyEnvironment.set(new ColorAttribute(ColorAttribute.AmbientLight, 0.05f, 0.05f, 0.05f, 1f));
-        System.out.println("[MazeRenderer] Created dark environment for enemy lighting");
+        enemyEnvironment.set(new ColorAttribute(ColorAttribute.AmbientLight, 0.002f, 0.002f, 0.0025f, 1f));
+
+        // Create flashlight as a point light for skinned models
+        flashlightPointLight = new com.badlogic.gdx.graphics.g3d.environment.PointLight();
+        flashlightPointLight.set(1.4f, 1.4f, 1.35f, 0, 0, 0, 15f); // Warm white, intensity 15
+        enemyEnvironment.add(flashlightPointLight);
+
+        System.out.println("[MazeRenderer] Created dynamic environment for enemy lighting");
+
+        remotePlayerEnvironment = new Environment();
+        remotePlayerEnvironment.set(new ColorAttribute(ColorAttribute.AmbientLight, 0.002f, 0.002f, 0.0025f, 1f));
+        remotePlayerEnvironment.add(flashlightPointLight); // Share flashlight with remote players
+        System.out.println("[MazeRenderer] Created dynamic environment for remote players");
 
         // Create debug shape renderer
         shapeRenderer = new ShapeRenderer();
@@ -175,6 +211,9 @@ public class MazeRenderer {
         // Initialize footstep manager
         footstepManager = new FootstepManager();
         footstepManager.initialize();
+
+        // Load all character models for remote players
+        loadAllCharacterModels();
     }
 
     /**
@@ -244,6 +283,245 @@ public class MazeRenderer {
                 }
             }
         }
+    }
+
+    private void applyCharacterTextures(final Model model, final FileHandle baseDir) {
+        if (model == null || baseDir == null) {
+            return;
+        }
+        for (Material mat : model.materials) {
+            final String name = mat.id != null ? mat.id.toLowerCase() : "";
+            final boolean isHair = name.contains("hair");
+
+            final FileHandle diffuseFile = pickTexture(baseDir, isHair, "diffuse");
+            if (diffuseFile != null) {
+                final Texture diffuseTex = new Texture(diffuseFile, true); // Generate mipmaps
+                diffuseTex.setFilter(
+                    Texture.TextureFilter.MipMapLinearLinear,
+                    Texture.TextureFilter.Linear
+                );
+                diffuseTex.setWrap(
+                    Texture.TextureWrap.Repeat,
+                    Texture.TextureWrap.Repeat
+                );
+                mat.set(TextureAttribute.createDiffuse(diffuseTex));
+            }
+
+            final FileHandle normalFile = pickTexture(baseDir, isHair, "normal");
+            if (normalFile != null) {
+                final Texture normalTex = new Texture(normalFile, true);
+                normalTex.setFilter(
+                    Texture.TextureFilter.MipMapLinearLinear,
+                    Texture.TextureFilter.Linear
+                );
+                normalTex.setWrap(
+                    Texture.TextureWrap.Repeat,
+                    Texture.TextureWrap.Repeat
+                );
+                mat.set(TextureAttribute.createNormal(normalTex));
+            }
+
+            final FileHandle specFile = pickTexture(baseDir, isHair, "specular");
+            if (specFile != null) {
+                final Texture specTex = new Texture(specFile, true);
+                specTex.setFilter(
+                    Texture.TextureFilter.MipMapLinearLinear,
+                    Texture.TextureFilter.Linear
+                );
+                specTex.setWrap(
+                    Texture.TextureWrap.Repeat,
+                    Texture.TextureWrap.Repeat
+                );
+                mat.set(TextureAttribute.createSpecular(specTex));
+            }
+        }
+    }
+
+    private FileHandle pickTexture(final FileHandle baseDir, final boolean hair, final String key) {
+        final String suffix = key.substring(0, 1).toUpperCase() + key.substring(1).toLowerCase();
+        final String primary = hair ? "Ch33_1002_" + suffix + ".png" : "Ch33_1001_" + suffix + ".png";
+        FileHandle handle = baseDir.child(primary);
+        if (handle.exists()) {
+            return handle;
+        }
+        for (FileHandle fh : baseDir.list()) {
+            if (fh.name().toLowerCase().contains(key.toLowerCase())) {
+                return fh;
+            }
+        }
+        return null;
+    }
+
+    /**
+     * Loads the player 3D model with animations from G3DJ files.
+     * The model includes the base mesh and skeletal animations.
+     */
+    /**
+     * Loads all available character models for remote players.
+     * Supports DEFAULT, BIG_BUSINESS, and SOUNDCLOUD character types.
+     */
+    private void loadAllCharacterModels() {
+        System.out.println("[MazeRenderer] Loading all character models...");
+
+        // Load DEFAULT character
+        loadCharacterModel("DEFAULT", "models/player/default", "IdleNew", "WalkingNew");
+
+        // Load BIG_BUSINESS character
+        loadCharacterModel("BIG_BUSINESS", "models/player/big_business", "Idle", "Walking");
+
+        // Load SOUNDCLOUD character
+        loadCharacterModel("SOUNDCLOUD", "models/player/soundcloud", "Idle", "Walking");
+
+        System.out.println("[MazeRenderer] All character models loaded (" + characterModels.size() + " types)");
+    }
+
+    /**
+     * Loads a single character model with animations.
+     *
+     * @param characterType Character type identifier (e.g., "DEFAULT", "BIG_BUSINESS")
+     * @param basePath Base path to character model files
+     * @param idleFileName Filename for idle animation (without .g3dj extension)
+     * @param walkingFileName Filename for walking animation (without .g3dj extension)
+     */
+    private void loadCharacterModel(final String characterType, final String basePath,
+                                     final String idleFileName, final String walkingFileName) {
+        try {
+            System.out.println("[MazeRenderer] Loading " + characterType + " character model...");
+
+            final com.badlogic.gdx.graphics.g3d.loader.G3dModelLoader loader =
+                new com.badlogic.gdx.graphics.g3d.loader.G3dModelLoader(
+                    new com.badlogic.gdx.utils.JsonReader()
+                );
+
+            // Load base model from idle animation
+            final Model characterModel = loader.loadModel(
+                Gdx.files.internal(basePath + "/" + idleFileName + ".g3dj")
+            );
+
+            System.out.println("[MazeRenderer]   Base model loaded: " + characterModel.meshes.size + " meshes, "
+                + characterModel.nodes.size + " nodes");
+
+            // Load idle animation
+            final Model idleModel = loader.loadModel(
+                Gdx.files.internal(basePath + "/" + idleFileName + ".g3dj")
+            );
+            if (idleModel.animations.size > 0) {
+                final com.badlogic.gdx.graphics.g3d.model.Animation idleAnim = idleModel.animations.get(0);
+                idleAnim.id = "idle";
+                characterModel.animations.add(idleAnim);
+                System.out.println("[MazeRenderer]   Added 'idle' animation (duration: " + idleAnim.duration + "s)");
+            }
+
+            // Load walking animation
+            final Model walkingModel = loader.loadModel(
+                Gdx.files.internal(basePath + "/" + walkingFileName + ".g3dj")
+            );
+            if (walkingModel.animations.size > 0) {
+                final com.badlogic.gdx.graphics.g3d.model.Animation walkingAnim = walkingModel.animations.get(0);
+                walkingAnim.id = "walking";
+                characterModel.animations.add(walkingAnim);
+                System.out.println("[MazeRenderer]   Added 'walking' animation (duration: " + walkingAnim.duration + "s)");
+            }
+
+            // Ensure materials have diffuse textures
+            for (com.badlogic.gdx.graphics.g3d.Material mat : characterModel.materials) {
+                if (mat.get(TextureAttribute.Diffuse) == null) {
+                    mat.set(TextureAttribute.createDiffuse(whiteTexture));
+                }
+            }
+            applyCharacterTextures(characterModel, Gdx.files.internal(basePath));
+            applyCharacterTextures(characterModel, Gdx.files.internal(basePath));
+
+            // Calculate scale and offsets for this character
+            final ModelInstance tempInstance = new ModelInstance(characterModel);
+            final BoundingBox bounds = new BoundingBox();
+            tempInstance.calculateBoundingBox(bounds);
+            final Vector3 dimensions = bounds.getDimensions(new Vector3());
+
+            float scale = 1f;
+            float footOffset = 0f;
+            Vector3 rootTranslation = new Vector3(Vector3.Zero);
+
+            if (dimensions.y > 0.0001f) {
+                scale = (GameConfig.PLAYER_HEIGHT / dimensions.y) * 1.1f;
+                footOffset = -bounds.min.y;
+                System.out.println("[MazeRenderer]   Model height: " + dimensions.y
+                    + " -> scale: " + scale + ", foot offset: " + footOffset);
+            }
+
+            if (!characterModel.nodes.isEmpty()) {
+                rootTranslation.set(characterModel.nodes.first().translation);
+            }
+
+            // Store model and metadata
+            characterModels.put(characterType, characterModel);
+            characterScales.put(characterType, scale);
+            characterFootOffsets.put(characterType, footOffset);
+            characterRootTranslations.put(characterType, new Vector3(rootTranslation));
+
+            System.out.println("[MazeRenderer]   " + characterType + " model loaded with "
+                + characterModel.animations.size + " animations");
+
+        } catch (final Exception e) {
+            System.err.println("[MazeRenderer] ERROR: Failed to load " + characterType + " character model");
+            e.printStackTrace();
+
+            // Fallback to simple cube
+            System.out.println("[MazeRenderer]   Creating fallback cube for " + characterType);
+            final ModelBuilder modelBuilder = new ModelBuilder();
+            final Model fallbackModel = modelBuilder.createBox(
+                GameConfig.PLAYER_COLLISION_RADIUS * 2,
+                GameConfig.PLAYER_HEIGHT,
+                GameConfig.PLAYER_COLLISION_RADIUS * 2,
+                new Material(ColorAttribute.createDiffuse(Color.SKY)),
+                VertexAttributes.Usage.Position | VertexAttributes.Usage.Normal
+            );
+
+            characterModels.put(characterType, fallbackModel);
+            characterScales.put(characterType, 1f);
+            characterFootOffsets.put(characterType, 0f);
+            characterRootTranslations.put(characterType, new Vector3(Vector3.Zero));
+        }
+    }
+
+    /**
+     * Gets the character model for a given character type.
+     * Returns DEFAULT model if type not found.
+     *
+     * @param characterType Character type (e.g., "DEFAULT", "BIG_BUSINESS")
+     * @return Character model
+     */
+    private Model getCharacterModel(final String characterType) {
+        if (characterType == null || !characterModels.containsKey(characterType)) {
+            return characterModels.get("DEFAULT");
+        }
+        return characterModels.get(characterType);
+    }
+
+    /**
+     * Gets the scale for a given character type.
+     *
+     * @param characterType Character type
+     * @return Character scale
+     */
+    private float getCharacterScale(final String characterType) {
+        if (characterType == null || !characterScales.containsKey(characterType)) {
+            return characterScales.getOrDefault("DEFAULT", 1f);
+        }
+        return characterScales.get(characterType);
+    }
+
+    /**
+     * Gets the foot offset for a given character type.
+     *
+     * @param characterType Character type
+     * @return Foot offset
+     */
+    private float getCharacterFootOffset(final String characterType) {
+        if (characterType == null || !characterFootOffsets.containsKey(characterType)) {
+            return characterFootOffsets.getOrDefault("DEFAULT", 0f);
+        }
+        return characterFootOffsets.get(characterType);
     }
 
     /**
@@ -474,53 +752,10 @@ public class MazeRenderer {
         // Pass lamp positions to shader for lighting
         setupLampLights();
 
-        // Create and pass maze data to shader for shadow casting
-        createMazeShadowTexture();
-    }
+        // Create ceiling lamp point lights for skinned models
+        setupLampLightsForSkinnedModels();
 
-    /**
-     * Creates a texture representing the maze for shadow casting.
-     * White pixels = walls, Black pixels = paths
-     */
-    private void createMazeShadowTexture() {
-        final int width = maze.getWidth();
-        final int height = maze.getHeight();
-
-        // Create pixel data (RGBA format)
-        final com.badlogic.gdx.graphics.Pixmap pixmap =
-            new com.badlogic.gdx.graphics.Pixmap(width, height, com.badlogic.gdx.graphics.Pixmap.Format.RGBA8888);
-
-        // Fill pixmap with maze data
-        for (int z = 0; z < height; z++) {
-            for (int x = 0; x < width; x++) {
-                if (maze.isWall(x, z)) {
-                    pixmap.setColor(1, 1, 1, 1); // White = wall
-                } else {
-                    pixmap.setColor(0, 0, 0, 1); // Black = path
-                }
-                pixmap.drawPixel(x, z);
-            }
-        }
-
-        // Create texture from pixmap
-        final com.badlogic.gdx.graphics.Texture mazeTexture =
-            new com.badlogic.gdx.graphics.Texture(pixmap);
-        mazeTexture.setFilter(
-            com.badlogic.gdx.graphics.Texture.TextureFilter.Nearest,
-            com.badlogic.gdx.graphics.Texture.TextureFilter.Nearest
-        );
-
-        pixmap.dispose();
-
-        // Pass to shader
-        lightingManager.getShader().setMazeData(
-            mazeTexture,
-            (float) width,
-            (float) height,
-            GameConfig.CELL_SIZE
-        );
-
-        System.out.println("[MazeRenderer] Created maze shadow texture: " + width + "x" + height);
+        // Note: Maze shadow texture removed - shadow casting disabled for performance
     }
 
     /**
@@ -555,6 +790,65 @@ public class MazeRenderer {
 
         lightingManager.getShader().setPointLights(positions, colors, intensities, numLights);
         System.out.println("[MazeRenderer] Configured " + numLights + " lamp lights in shader");
+    }
+
+    /**
+     * Creates ceiling lamp point lights for skinned models (enemy, remote players).
+     * Limits to 5 closest lamps for performance (LibGDX supports up to 5 point lights by default).
+     */
+    private void setupLampLightsForSkinnedModels() {
+        // Add up to 5 ceiling lamp lights (LibGDX DefaultShader limit)
+        final int maxLights = Math.min(5, lampLightPositions.size());
+
+        for (int i = 0; i < maxLights; i++) {
+            final com.badlogic.gdx.graphics.g3d.environment.PointLight lampLight =
+                new com.badlogic.gdx.graphics.g3d.environment.PointLight();
+
+            // Start with default position and intensity
+            final Vector3 position = lampLightPositions.get(i);
+            final boolean isBroken = lampIsBroken.get(i);
+
+            if (isBroken) {
+                lampLight.set(1.0f, 0.85f, 0.5f, position.x, position.y, position.z, 0f);
+            } else {
+                lampLight.set(1.0f, 0.85f, 0.5f, position.x, position.y, position.z, 12f);
+            }
+
+            ceilingLampLights.add(lampLight);
+            enemyEnvironment.add(lampLight);
+            remotePlayerEnvironment.add(lampLight);
+        }
+
+        System.out.println("[MazeRenderer] Added " + maxLights + " ceiling lamp lights to skinned model environments");
+    }
+
+    /**
+     * Updates the dynamic lighting for skinned models based on player camera position.
+     * Should be called each frame before rendering enemy/remote players.
+     *
+     * @param cameraPosition Player's camera position (flashlight origin)
+     * @param cameraDirection Player's camera direction (flashlight direction)
+     */
+    public void updateSkinnedModelLighting(final Vector3 cameraPosition, final Vector3 cameraDirection) {
+        // Update flashlight position (use camera position as flashlight is on player)
+        flashlightPointLight.position.set(cameraPosition);
+
+        // Update nearby ceiling lamp intensities (use flicker values)
+        for (int i = 0; i < ceilingLampLights.size(); i++) {
+            final com.badlogic.gdx.graphics.g3d.environment.PointLight lampLight = ceilingLampLights.get(i);
+            final Vector3 lampPos = lampLightPositions.get(i);
+
+            // Update lamp position (in case it changed, though usually static)
+            lampLight.position.set(lampPos);
+
+            // Update intensity based on flicker
+            if (lampIsBroken.get(i)) {
+                lampLight.intensity = 0f;
+            } else if (lampFlickerIntensities != null && i < lampFlickerIntensities.length) {
+                // Use current flicker intensity (scaled up for visibility)
+                lampLight.intensity = lampFlickerIntensities[i] * 12f;
+            }
+        }
     }
 
     /**
@@ -615,9 +909,10 @@ public class MazeRenderer {
                 flicker = flicker * 0.6f + variation * 0.3f + spike * 0.3f;
 
                 // Map to intensity range based on how broken the lamp is
-                // More broken lamps go darker (0.0 to 0.8) vs less broken (0.4 to 1.2)
-                float baseIntensity = 0.6f - brokenLevel * 0.3f;
-                float flickerRange = 0.5f + brokenLevel * 0.4f;
+                // Increased base intensity for better visibility
+                // More broken lamps go darker (0.2 to 1.2) vs less broken (0.8 to 2.0)
+                float baseIntensity = 1.0f - brokenLevel * 0.4f;
+                float flickerRange = 0.8f + brokenLevel * 0.6f;
                 float intensity = baseIntensity + flicker * flickerRange;
 
                 // Some lamps occasionally go completely dark (electrical failure)
@@ -628,8 +923,8 @@ public class MazeRenderer {
                     }
                 }
 
-                // Clamp to safe range (allow complete darkness for broken effect)
-                intensity = Math.max(0.0f, Math.min(1.2f, intensity));
+                // Clamp to safe range (allow complete darkness for broken effect, but increased max)
+                intensity = Math.max(0.0f, Math.min(2.5f, intensity));
 
                 lampFlickerIntensities[i] = intensity;
                 intensities[i] = intensity;
@@ -1185,8 +1480,8 @@ public class MazeRenderer {
                                       GameConfig.ENEMY_GLB_SCALE,
                                       GameConfig.ENEMY_GLB_SCALE);
 
-        // Update enemy lighting based on player flashlight
-        updateEnemyLighting(camera, enemy);
+        // Update dynamic lighting for skinned models (flashlight + ceiling lamps)
+        updateSkinnedModelLighting(camera.position, camera.direction);
 
         // Render with ESP (no depth test for visibility through walls)
         // Use skinnedModelBatch for proper bone animation support
@@ -1197,56 +1492,6 @@ public class MazeRenderer {
         Gdx.gl.glEnable(com.badlogic.gdx.graphics.GL20.GL_DEPTH_TEST);
     }
 
-    /**
-     * Updates enemy lighting to simulate flashlight illumination.
-     * Calculates brightness based on distance and angle to flashlight.
-     */
-    private void updateEnemyLighting(final PerspectiveCamera camera, final Enemy enemy) {
-        // Get flashlight position (camera position)
-        final Vector3 flashlightPos = camera.position;
-        final Vector3 flashlightDir = camera.direction;
-        final Vector3 enemyPos = enemy.getPosition();
-
-        // Calculate vector from flashlight to enemy
-        final Vector3 toEnemy = enemyPos.cpy().sub(flashlightPos);
-        final float distance = toEnemy.len();
-        toEnemy.nor();
-
-        // Calculate angle between flashlight direction and enemy direction
-        final float angle = flashlightDir.dot(toEnemy);
-
-        // Spotlight cone parameters (matching SpotlightShader)
-        final float innerCone = (float) Math.cos(Math.toRadians(25.0));
-        final float outerCone = (float) Math.cos(Math.toRadians(35.0));
-
-        // Calculate spotlight intensity based on angle
-        float spotlightIntensity = 0f;
-        if (angle > outerCone) {
-            if (angle > innerCone) {
-                spotlightIntensity = 1.0f; // Full intensity in inner cone
-            } else {
-                // Smooth falloff between inner and outer cone
-                spotlightIntensity = (angle - outerCone) / (innerCone - outerCone);
-            }
-
-            // Apply distance attenuation
-            final float attenuation = 1.0f / (1.0f + 0.015f * distance * distance);
-            spotlightIntensity *= attenuation;
-        }
-
-        // Base ambient light (match maze darkness - 0.0005f)
-        final float baseAmbient = 0.0005f;
-
-        // Add flashlight contribution
-        final float finalBrightness = baseAmbient + spotlightIntensity * 0.8f;
-
-        // Update environment with calculated brightness (reduced multiplier to blend better)
-        enemyEnvironment.set(new ColorAttribute(ColorAttribute.AmbientLight,
-            finalBrightness * 1.0f, // Match natural lighting
-            finalBrightness * 1.0f,
-            finalBrightness * 0.95f,
-            1f));
-    }
 
     /**
      * Updates footstep system based on enemy movement.
@@ -1258,6 +1503,195 @@ public class MazeRenderer {
         if (footstepManager != null) {
             footstepManager.update(delta, enemy);
         }
+    }
+
+    /**
+     * Renders remote players with animated models.
+     *
+     * @param camera The game camera
+     * @param players Remote player states
+     */
+    public void renderRemotePlayers(final PerspectiveCamera camera, final List<RemotePlayerState> players) {
+        if (characterModels.isEmpty() || players == null) {
+            return;
+        }
+
+        // Remove instances and controllers that are no longer present
+        remotePlayerInstances.keySet().removeIf(id ->
+            players.stream().noneMatch(p -> p.id.equals(id)));
+        remotePlayerAnimControllers.keySet().removeIf(id ->
+            players.stream().noneMatch(p -> p.id.equals(id)));
+        remotePlayerCurrentAnim.keySet().removeIf(id ->
+            players.stream().noneMatch(p -> p.id.equals(id)));
+        remotePlayerPrevPositions.keySet().removeIf(id ->
+            players.stream().noneMatch(p -> p.id.equals(id)));
+        remotePlayerSpeedAvg.keySet().removeIf(id ->
+            players.stream().noneMatch(p -> p.id.equals(id)));
+        remotePlayerAnimChangeTime.keySet().removeIf(id ->
+            players.stream().noneMatch(p -> p.id.equals(id)));
+        remotePlayerCharacterTypes.keySet().removeIf(id ->
+            players.stream().noneMatch(p -> p.id.equals(id)));
+
+        final float delta = Gdx.graphics.getDeltaTime();
+        remotePlayerAnimClock += delta;
+
+        // Update/create instances and animations
+        for (RemotePlayerState state : players) {
+            // Get or default character type
+            final String characterType = (state.characterType != null && !state.characterType.isEmpty())
+                ? state.characterType : "DEFAULT";
+
+            // Check if character type changed (player switched skin)
+            final String previousCharacterType = remotePlayerCharacterTypes.get(state.id);
+            final boolean characterChanged = previousCharacterType != null
+                && !previousCharacterType.equals(characterType);
+
+            ModelInstance instance = remotePlayerInstances.get(state.id);
+            AnimationController animController = remotePlayerAnimControllers.get(state.id);
+            Vector3 prevPos = remotePlayerPrevPositions.get(state.id);
+            float smoothedSpeed = remotePlayerSpeedAvg.getOrDefault(state.id, 0f);
+
+            // Create new instance if needed or if character changed
+            if (instance == null || characterChanged) {
+                final Model characterModel = getCharacterModel(characterType);
+                instance = new ModelInstance(characterModel);
+                remotePlayerInstances.put(state.id, instance);
+                remotePlayerCharacterTypes.put(state.id, characterType);
+
+                // Create animation controller if model has animations
+                if (characterModel.animations.size > 0) {
+                    animController = new AnimationController(instance);
+                    remotePlayerAnimControllers.put(state.id, animController);
+                    System.out.println("[MazeRenderer] Created " + characterType + " model for remote player " + state.id);
+                }
+
+                // Reset animation state when character changes
+                if (characterChanged) {
+                    remotePlayerCurrentAnim.remove(state.id);
+                }
+            }
+
+            // Derive movement state from position delta (server does not send animation flags)
+            float speed = 0f;
+            if (prevPos != null && delta > 0f) {
+                final float dx = state.x - prevPos.x;
+                final float dz = state.z - prevPos.z;
+                final float dist = (float) Math.sqrt(dx * dx + dz * dz);
+                speed = dist / delta;
+            }
+            // Smooth speed to avoid noisy spikes (EMA)
+            smoothedSpeed += (speed - smoothedSpeed) * 0.25f;
+            remotePlayerSpeedAvg.put(state.id, smoothedSpeed);
+
+            final String currentAnim = remotePlayerCurrentAnim.getOrDefault(state.id, "idle");
+            final float lastChangeTime = remotePlayerAnimChangeTime.getOrDefault(state.id, -1000f);
+
+            // Hysteresis thresholds to prevent walk/idle ping-pong
+            final float walkEnter = 0.1f; // start walking
+            final float walkExit = 0.06f; // drop to idle below this
+
+            String desiredAnim = "idle";
+            float animSpeed = 1.0f;
+
+            if ("walking".equals(currentAnim)) {
+                if (smoothedSpeed > walkExit) {
+                    desiredAnim = "walking";
+                    animSpeed = 1.0f;
+                }
+            } else if (smoothedSpeed > walkEnter) {
+                desiredAnim = "walking";
+                animSpeed = 1.0f;
+            }
+
+            // Enforce minimum time before downgrading animation
+            final float minDuration = 0.55f;
+            if (!desiredAnim.equals(currentAnim)
+                && (remotePlayerAnimClock - lastChangeTime) < minDuration) {
+                desiredAnim = currentAnim;
+                animSpeed = 1.0f;
+            }
+
+            // Get character-specific data
+            final Model characterModel = getCharacterModel(characterType);
+            final float characterScale = getCharacterScale(characterType);
+            final float characterFootOffset = getCharacterFootOffset(characterType);
+            final Vector3 characterRootTranslation = characterRootTranslations.getOrDefault(
+                characterType, new Vector3(Vector3.Zero)
+            );
+
+            // Update animation based on smoothed movement with hysteresis and minimum duration
+            if (animController != null && characterModel.animations.size > 0) {
+                final String targetAnim = desiredAnim;
+                final float resolvedAnimSpeed = ("standard run".equals(targetAnim)) ? 1.2f
+                    : ("walking".equals(targetAnim) ? 1.0f : 1.0f);
+
+                final String currentAnimResolved = remotePlayerCurrentAnim.get(state.id);
+                if (!targetAnim.equals(currentAnimResolved)) {
+                    for (int i = 0; i < characterModel.animations.size; i++) {
+                        if (characterModel.animations.get(i).id.equalsIgnoreCase(targetAnim)) {
+                            animController.setAnimation(characterModel.animations.get(i).id, -1);
+                            remotePlayerCurrentAnim.put(state.id, targetAnim);
+                            remotePlayerAnimChangeTime.put(state.id, remotePlayerAnimClock);
+                            System.out.println("[MazeRenderer] Player " + state.id + " animation: " + targetAnim);
+                            break;
+                        }
+                    }
+                }
+
+                animController.update(delta * resolvedAnimSpeed);
+                // Ensure root bone translation stays in-place (prevent baked root motion)
+                if (!instance.nodes.isEmpty()) {
+                    instance.nodes.first().translation.set(characterRootTranslation);
+                    instance.calculateTransforms();
+                }
+            }
+
+            // Update transform
+            instance.transform.idt();
+            // Place feet on ground based on bounding box min Y and rotate to face forward
+            float baseY = state.y - GameConfig.PLAYER_HEIGHT;
+            if (Math.abs(state.y) < 0.0001f) {
+                baseY = 0f; // Fallback if server did not provide height
+            }
+            instance.transform.translate(
+                state.x,
+                baseY + characterFootOffset * characterScale,
+                state.z
+            );
+            instance.transform.rotate(Vector3.Y, 180f - state.yaw);
+
+            // Scale player model to match engine player height (character-specific)
+            instance.transform.scale(characterScale, characterScale, characterScale);
+            // Recalculate transforms after applying instance transform to keep bones aligned
+            instance.calculateTransforms();
+
+            // Store position for next frame to detect movement
+            remotePlayerPrevPositions.put(state.id,
+                prevPos != null ? prevPos.set(state.x, state.y, state.z)
+                    : new Vector3(state.x, state.y, state.z));
+        }
+
+        // Render all remote players
+        if (!remotePlayerInstances.isEmpty()) {
+            // Use skinnedModelBatch if model has animations, otherwise use regular batch
+            final boolean hasAnimations = !remotePlayerAnimControllers.isEmpty();
+            final ModelBatch batch = hasAnimations ? skinnedModelBatch : modelBatch;
+
+            // Dynamic lighting is now handled by updateSkinnedModelLighting() method
+
+            batch.begin(camera);
+            for (ModelInstance instance : remotePlayerInstances.values()) {
+                batch.render(instance, remotePlayerEnvironment);
+            }
+            batch.end();
+        }
+    }
+
+    private int animationPriority(final String anim) {
+        if ("walking".equalsIgnoreCase(anim)) {
+            return 1;
+        }
+        return 0;
     }
 
     /**
@@ -1398,4 +1832,3 @@ public class MazeRenderer {
         }
     }
 }
-

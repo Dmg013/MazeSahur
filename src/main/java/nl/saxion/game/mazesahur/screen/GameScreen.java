@@ -9,10 +9,12 @@ import com.badlogic.gdx.math.Vector3;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Random;
+import nl.saxion.game.mazesahur.model.CharacterType;
+import nl.saxion.game.mazesahur.net.MultiplayerSession;
+import nl.saxion.game.mazesahur.net.RemotePlayerState;
 import nl.saxion.game.mazesahur.config.GameConfig;
 import nl.saxion.game.mazesahur.entity.Player;
 import nl.saxion.game.mazesahur.entity.Enemy;
-import nl.saxion.game.mazesahur.entity.Elevator;
 import nl.saxion.game.mazesahur.entity.PhotoFrame;
 import nl.saxion.game.mazesahur.entity.Boost;
 import nl.saxion.game.mazesahur.rendering.LightingManager;
@@ -37,7 +39,6 @@ public class GameScreen extends ScalableGameScreen {
     private final Player player;
     private final Enemy enemy;
     private final Maze maze;
-    private Elevator elevator;
     private final List<PhotoFrame> photoFrames;
     private final List<Boost> boosts;
 
@@ -75,22 +76,65 @@ public class GameScreen extends ScalableGameScreen {
     // Debug visualization
     private boolean showRailNetwork = false;
 
+    // Multiplayer
+    private final MultiplayerSession multiplayerSession;
+    private final boolean networked;
+    private List<RemotePlayerState> remotePlayers = new ArrayList<>();
+    private boolean useNetworkEnemy = false;
+    private final CharacterType localCharacterType;
+
     /**
      * Creates a new game screen with default settings.
      */
     public GameScreen() {
+        this(null, null, CharacterSelectionScreen.getSavedCharacter());
+    }
+
+    /**
+     * Creates a new game screen with an optional deterministic maze seed.
+     * Passing a seed allows server/client to share the exact same layout.
+     *
+     * @param mazeSeed Seed to use for maze generation (null = random)
+     */
+    public GameScreen(final Long mazeSeed) {
+        this(mazeSeed, null, CharacterSelectionScreen.getSavedCharacter());
+    }
+
+    /**
+     * Creates a new game screen with optional seed and multiplayer session.
+     *
+     * @param mazeSeed Seed to use for maze generation (null = random)
+     * @param session Multiplayer session (null for singleplayer)
+     */
+    public GameScreen(final Long mazeSeed, final MultiplayerSession session) {
+        this(mazeSeed, session, CharacterSelectionScreen.getSavedCharacter());
+    }
+
+    /**
+     * Creates a new game screen with optional seed, multiplayer session, and character selection.
+     *
+     * @param mazeSeed Seed to use for maze generation (null = random)
+     * @param session Multiplayer session (null for singleplayer)
+     * @param characterType Character skin to use (persisted to networking)
+     */
+    public GameScreen(final Long mazeSeed, final MultiplayerSession session, final CharacterType characterType) {
         super(1280, 720);
 
+        this.multiplayerSession = session;
+        this.networked = session != null;
+        this.localCharacterType = characterType != null ? characterType : CharacterType.DEFAULT;
+
+        final long seed = mazeSeed != null
+            ? mazeSeed
+            : (session != null ? session.getSeed() : System.currentTimeMillis());
+
         // Initialize world
-        maze = new Maze(25, 25);
+        maze = new Maze(25, 25, seed);
         maze.generate();
 
         // Initialize entities
         player = new Player(new Vector3(12f, 3f, 12f));
         enemy = new Enemy(maze, player);
-
-        // Initialize elevator in a valid open position
-        elevator = createElevatorInOpenSpace();
 
         // Initialize photo frames on walls
         photoFrames = createPhotoFramesOnWalls();
@@ -102,6 +146,9 @@ public class GameScreen extends ScalableGameScreen {
         yaw = 0;
         pitch = 0;
         firstMouse = true;
+
+        System.out.println("[GameScreen] Using maze seed: " + seed + " networked=" + networked
+            + " character=" + localCharacterType.name());
     }
 
     @Override
@@ -187,11 +234,17 @@ public class GameScreen extends ScalableGameScreen {
 
         // Skip normal game logic if dead
         if (!isDead) {
+            // Apply latest network state before local updates
+            if (networked && multiplayerSession != null && multiplayerSession.isJoined()) {
+                syncNetworkState();
+            }
+
             // Update game state
             handleInput(delta);
             player.update(delta, maze);
-            enemy.update(delta);
-            elevator.update(delta, player.getPosition()); // Update elevator with player position
+            if (!useNetworkEnemy) {
+                enemy.update(delta);
+            }
             updateCamera();
 
             // Update boosts and check for pickups
@@ -220,12 +273,16 @@ public class GameScreen extends ScalableGameScreen {
         Gdx.gl.glClearColor(0.0f, 0.0f, 0.0f, 1f);
         Gdx.gl.glClear(GL20.GL_COLOR_BUFFER_BIT | GL20.GL_DEPTH_BUFFER_BIT);
 
-        // Render 3D scene (elevator is rendered together with maze to prevent material bleeding)
-        mazeRenderer.renderWithElevator(camera, elevator);
+        // Render 3D scene
+        mazeRenderer.render(camera);
         mazeRenderer.renderEnemy(camera, enemy);
 
         // Render boost pickups
         mazeRenderer.renderBoosts(camera, boosts);
+        // Render remote players (if any)
+        if (networked) {
+            mazeRenderer.renderRemotePlayers(camera, remotePlayers);
+        }
         // Render footsteps
         mazeRenderer.renderFootsteps(camera);
 
@@ -236,7 +293,7 @@ public class GameScreen extends ScalableGameScreen {
 
         // Render UI (hide during jumpscare)
         if (!jumpscareActive) {
-            gameUI.render(this, player, enemy, elevator, lightingManager);
+            gameUI.render(this, player, enemy, lightingManager, camera, remotePlayers);
         }
     }
 
@@ -308,6 +365,22 @@ public class GameScreen extends ScalableGameScreen {
         }
 
         // Apply movement with collision detection
+        // Always send input when networked so server knows when you stop moving
+        if (networked && multiplayerSession != null && multiplayerSession.isJoined()) {
+            final boolean hasInput = moveDirection.len2() > 0.0001f;
+            multiplayerSession.sendInput(moveDirection.x, moveDirection.z, yaw);
+            if (hasInput) {
+                final float speedMultiplier = player.getCurrentSpeedMultiplier();
+                final float currentSpeed = GameConfig.PLAYER_MOVE_SPEED * speedMultiplier;
+                final Vector3 predicted = player.getPosition().cpy()
+                    .add(moveDirection.nor().scl(currentSpeed * delta));
+                if (!checkCollision(predicted)) {
+                    player.getPosition().set(predicted);
+                }
+            }
+            return;
+        }
+
         if (moveDirection.len() > 0) {
             // Calculate speed based on energy level
             final float speedMultiplier = player.getCurrentSpeedMultiplier();
@@ -339,50 +412,7 @@ public class GameScreen extends ScalableGameScreen {
     }
 
     /**
-     * Creates an elevator using the maze's guaranteed position finder.
-     * The maze will find a suitable wall and prepare it for the elevator.
-     */
-    private Elevator createElevatorInOpenSpace() {
-        // Player spawns at (12, 3, 12) world coordinates
-        final float playerX = 12f;
-        final float playerZ = 12f;
-
-        final int playerGridX = (int) Math.floor(playerX / Maze.CELL_SIZE);
-        final int playerGridZ = (int) Math.floor(playerZ / Maze.CELL_SIZE);
-
-        // Let the maze find and prepare a guaranteed elevator position
-        final int[] elevatorInfo = maze.findAndPrepareElevatorPosition(playerGridX, playerGridZ);
-
-        // Extract position info
-        final int wallX = elevatorInfo[0];
-        final int wallZ = elevatorInfo[1];
-        final int openX = elevatorInfo[2];
-        final int openZ = elevatorInfo[3];
-        final int direction = elevatorInfo[4];
-
-        // Convert wall position to world coordinates
-        final float[] wallWorldPos = maze.gridToWorld(wallX, wallZ);
-        final float elevatorX = wallWorldPos[0];
-        final float elevatorZ = wallWorldPos[1];
-
-        // Direction names for debug
-        final String[] dirNames = {"North (wall is North)", "East (wall is East)",
-                                   "South (wall is South)", "West (wall is West)"};
-
-        System.out.println("[GameScreen] ===== ELEVATOR SPAWN =====");
-        System.out.println("[GameScreen] Player spawn: (" + playerX + ", " + playerZ + ")");
-        System.out.println("[GameScreen] Elevator grid (IN WALL): (" + wallX + ", " + wallZ + ")");
-        System.out.println("[GameScreen] Elevator world: (" + elevatorX + ", " + elevatorZ + ")");
-        System.out.println("[GameScreen] Open space grid: (" + openX + ", " + openZ + ")");
-        System.out.println("[GameScreen] Door faces: " + dirNames[direction]);
-        System.out.println("[GameScreen] ===========================");
-
-        return new Elevator(maze, elevatorX, elevatorZ);
-    }
-
-    /**
      * Creates photo frames on walls throughout the maze.
-     * Frames contain commemorative photo of the elevator.
      * Spawns randomly with ~10% chance on suitable wall segments.
      */
     private List<PhotoFrame> createPhotoFramesOnWalls() {
@@ -498,7 +528,7 @@ public class GameScreen extends ScalableGameScreen {
     }
 
     /**
-     * Checks collision with maze walls and elevator using circular collision detection.
+     * Checks collision with maze walls using circular collision detection.
      */
     private boolean checkCollision(final Vector3 position) {
         final int gridX = (int) Math.floor(position.x / Maze.CELL_SIZE);
@@ -537,22 +567,11 @@ public class GameScreen extends ScalableGameScreen {
             }
         }
 
-        // Check collision with elevator (only blocks if doors are closed)
-        if (elevator.blocksPosition(position)) {
-            return true;
-        }
-
-        // TODO: Re-enable door frame collision after testing spawn position
-        // Check collision with elevator door frame (walls beside the door)
-        // if (elevator.collidesWithDoorFrame(position, GameConfig.PLAYER_COLLISION_RADIUS)) {
-        //     return true;
-        // }
-
         return false;
     }
 
     /**
-     * Handles non-movement game input (flashlight toggle, exit, elevator control, etc.).
+     * Handles non-movement game input (flashlight toggle, exit, etc.).
      */
     private void handleGameInput() {
         // Toggle flashlight
@@ -571,23 +590,43 @@ public class GameScreen extends ScalableGameScreen {
                 + (showRailNetwork ? "ON" : "OFF"));
         }
 
-        // Toggle elevator doors with E key
-        if (Gdx.input.isKeyJustPressed(Input.Keys.E)) {
-            if (elevator != null) {
-                // Check if player is close enough to the elevator
-                final float distanceToElevator = elevator.getDistanceToPlayer(player.getPosition());
-                if (distanceToElevator <= 8.0f) { // Within 8 units
-                    elevator.toggleDoors();
-                } else {
-                    System.out.println("[GameScreen] Too far from elevator to control doors (distance: " + distanceToElevator + ")");
-                }
-            }
-        }
-
         // Exit game
         if (Gdx.input.isKeyJustPressed(Input.Keys.ESCAPE)) {
             Gdx.input.setCursorCatched(false);
             Gdx.app.exit();
+        }
+    }
+
+    /**
+     * Applies latest authoritative state from the multiplayer session.
+     */
+    private void syncNetworkState() {
+        if (multiplayerSession == null) {
+            return;
+        }
+
+        final RemotePlayerState self = multiplayerSession.getSelfState();
+        if (self != null) {
+            final Vector3 target = new Vector3(self.x, self.y, self.z);
+            final float dist = player.getPosition().dst(target);
+            if (dist > 1.0f) {
+                // Large correction, snap
+                player.getPosition().set(target);
+            } else {
+                // Smooth blend
+                player.getPosition().lerp(target, 0.1f);
+            }
+            // Keep local yaw from mouse; server yaw can lag and cause camera snaps
+        }
+        remotePlayers = multiplayerSession.getRemotePlayers();
+
+        final var enemySnap = multiplayerSession.getEnemySnapshot();
+        if (enemySnap != null) {
+            useNetworkEnemy = true;
+            enemy.getPosition().set(enemySnap.x, enemySnap.y, enemySnap.z);
+            enemy.setYaw(enemySnap.yaw);
+        } else {
+            useNetworkEnemy = false;
         }
     }
 
@@ -770,4 +809,3 @@ public class GameScreen extends ScalableGameScreen {
         hide();
     }
 }
-
