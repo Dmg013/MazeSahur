@@ -177,6 +177,7 @@ public class GameScreen extends ScalableGameScreen {
         // Initialize camera (must be done after OpenGL context is ready)
         final int screenWidth = Gdx.graphics.getBackBufferWidth();
         final int screenHeight = Gdx.graphics.getBackBufferHeight();
+        System.out.println("[GameScreen] Screen dimensions at show(): " + screenWidth + "x" + screenHeight);
         camera = new PerspectiveCamera(67, screenWidth, screenHeight);
         camera.near = 0.01f;
         camera.far = 100f;
@@ -201,6 +202,10 @@ public class GameScreen extends ScalableGameScreen {
 
         // Capture cursor for FPS controls
         Gdx.input.setCursorCatched(true);
+
+        // Force viewport to full window size
+        Gdx.gl.glViewport(0, 0, screenWidth, screenHeight);
+        System.out.println("[GameScreen] Set initial viewport to " + screenWidth + "x" + screenHeight);
 
         // Update camera
         camera.position.set(player.getPosition());
@@ -272,6 +277,9 @@ public class GameScreen extends ScalableGameScreen {
         // Clear screen
         Gdx.gl.glClearColor(0.0f, 0.0f, 0.0f, 1f);
         Gdx.gl.glClear(GL20.GL_COLOR_BUFFER_BIT | GL20.GL_DEPTH_BUFFER_BIT);
+
+        // Set viewport to full window size (fixes bottom-left corner rendering issue)
+        Gdx.gl.glViewport(0, 0, Gdx.graphics.getBackBufferWidth(), Gdx.graphics.getBackBufferHeight());
 
         // Render 3D scene
         mazeRenderer.render(camera);
@@ -787,9 +795,12 @@ public class GameScreen extends ScalableGameScreen {
 
     @Override
     public void resize(final int width, final int height) {
-        camera.viewportWidth = width;
-        camera.viewportHeight = height;
-        camera.update();
+        if (camera != null) {
+            camera.viewportWidth = width;
+            camera.viewportHeight = height;
+            camera.update();
+            System.out.println("[GameScreen] Resized to " + width + "x" + height);
+        }
     }
 
     @Override
