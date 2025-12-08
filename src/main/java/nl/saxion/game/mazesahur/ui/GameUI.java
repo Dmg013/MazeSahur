@@ -6,6 +6,9 @@ import com.badlogic.gdx.graphics.GL20;
 import com.badlogic.gdx.graphics.glutils.ShapeRenderer;
 import com.badlogic.gdx.graphics.PerspectiveCamera;
 import com.badlogic.gdx.math.Vector3;
+import com.badlogic.gdx.graphics.g2d.BitmapFont;
+import com.badlogic.gdx.graphics.g2d.GlyphLayout;
+import com.badlogic.gdx.graphics.g2d.SpriteBatch;
 import nl.saxion.game.mazesahur.config.GameConfig;
 import nl.saxion.game.mazesahur.entity.Enemy;
 import nl.saxion.game.mazesahur.entity.Player;
@@ -14,9 +17,9 @@ import nl.saxion.game.mazesahur.screen.GameScreen;
 import nl.saxion.game.mazesahur.net.RemotePlayerState;
 import nl.saxion.gameapp.GameApp;
 
-/**w=
+/**
  * Handles all UI rendering for the game.
- * Displays HUD information, controls, and debug info.
+ * Modern dark theme UI with minimal HUD elements for immersive gameplay.
  *
  * @author Olivier, Luuk, Russell, Tim
  * @version 1.0
@@ -24,27 +27,55 @@ import nl.saxion.gameapp.GameApp;
 public class GameUI {
 
     private static final String FONT_NAME = "gameUI";
-    private static final int FONT_SIZE = 24;
+    private static final int FONT_SIZE = 20;
 
     // Energy bar dimensions
     private static final float ENERGY_BAR_WIDTH = 300f;
-    private static final float ENERGY_BAR_HEIGHT = 30f;
-    private static final float ENERGY_BAR_MARGIN = 20f;
+    private static final float ENERGY_BAR_HEIGHT = 8f;
+    private static final float ENERGY_BAR_MARGIN = 30f;
+
+    // Colors - Modern dark theme matching menu
+    private static final Color PANEL_BG = new Color(0.08f, 0.08f, 0.1f, 0.85f);
+    private static final Color ACCENT_RED = new Color(0.9f, 0.15f, 0.15f, 1.0f);
+    private static final Color ACCENT_RED_DIM = new Color(0.7f, 0.1f, 0.1f, 0.9f);
+    private static final Color TEXT_COLOR = new Color(0.9f, 0.9f, 0.9f, 1.0f);
+    private static final Color TEXT_DIM = new Color(0.6f, 0.6f, 0.6f, 0.8f);
+    private static final Color WARNING_COLOR = new Color(1.0f, 0.3f, 0.3f, 1.0f);
+    private static final Color SUCCESS_COLOR = new Color(0.3f, 1.0f, 0.3f, 1.0f);
+    private static final Color BOOST_COLOR = new Color(0.2f, 0.8f, 1.0f, 1.0f);
 
     private ShapeRenderer shapeRenderer;
+    private SpriteBatch batch;
+    private BitmapFont font;
+    private BitmapFont smallFont;
+    private GlyphLayout layout;
+
+    // Debug mode toggle
+    private boolean debugMode = false;
 
     /**
      * Init
      */
     public void initialize() {
-        System.out.println("[GameUI] Initializing UI and loading font...");
+        System.out.println("[GameUI] Initializing modern UI...");
         GameApp.addFont(FONT_NAME, "fonts/basic.ttf", FONT_SIZE);
         shapeRenderer = new ShapeRenderer();
-        System.out.println("[GameUI] Font loaded: " + FONT_NAME);
+        batch = new SpriteBatch();
+
+        font = new BitmapFont();
+        font.getData().setScale(1.5f);
+        font.setColor(TEXT_COLOR);
+
+        smallFont = new BitmapFont();
+        smallFont.getData().setScale(1.0f);
+        smallFont.setColor(TEXT_DIM);
+
+        layout = new GlyphLayout();
+        System.out.println("[GameUI] Modern UI initialized");
     }
 
     /**
-     * Renders the game UI.
+     * Renders the game UI with modern styling.
      *
      * @param gameScreen Reference to the game screen
      * @param player The player entity
@@ -57,128 +88,254 @@ public class GameUI {
                        final Enemy enemy, final LightingManager lightingManager,
                        final PerspectiveCamera camera, final java.util.List<RemotePlayerState> remotePlayers) {
         // Reset OpenGL state for 2D rendering
-        com.badlogic.gdx.Gdx.gl.glDisable(com.badlogic.gdx.graphics.GL20.GL_DEPTH_TEST);
-        com.badlogic.gdx.Gdx.gl.glEnable(com.badlogic.gdx.graphics.GL20.GL_BLEND);
-        com.badlogic.gdx.Gdx.gl.glBlendFunc(
-            com.badlogic.gdx.graphics.GL20.GL_SRC_ALPHA,
-            com.badlogic.gdx.graphics.GL20.GL_ONE_MINUS_SRC_ALPHA
-        );
+        Gdx.gl.glDisable(GL20.GL_DEPTH_TEST);
+        Gdx.gl.glEnable(GL20.GL_BLEND);
+        Gdx.gl.glBlendFunc(GL20.GL_SRC_ALPHA, GL20.GL_ONE_MINUS_SRC_ALPHA);
 
-        // Use actual window dimensions
-        final int screenWidth = com.badlogic.gdx.Gdx.graphics.getWidth();
-        final int screenHeight = com.badlogic.gdx.Gdx.graphics.getHeight();
+        final int screenWidth = Gdx.graphics.getWidth();
+        final int screenHeight = Gdx.graphics.getHeight();
 
         // Draw energy bar at bottom center
-        drawEnergyBar(player.getEnergy(), screenWidth, screenHeight);
+        drawModernEnergyBar(player.getEnergy(), screenWidth, screenHeight);
 
-        GameApp.startSpriteRendering();
+        batch.begin();
 
-        // Title (at top)
-        GameApp.drawText(FONT_NAME, "MazeSahur - Horror Maze Game",
-            20, 20, "white");
+        // Top-left corner: Game title (minimal)
+        font.setColor(ACCENT_RED);
+        font.draw(batch, "MAZESAHUR", 20, screenHeight - 20);
 
-        // Controls
-        GameApp.drawText(FONT_NAME, "WASD: Move | Shift: Run | Mouse: Look | F: Flashlight | ESC: Exit",
-            20, 50, "white");
+        // Top-right corner: Status indicators
+        drawStatusIndicators(lightingManager, player, screenWidth, screenHeight);
 
-        // Flashlight status
-        final String flashlightStatus = lightingManager.isFlashlightEnabled() ? "ON" : "OFF";
-        final String flashlightColor = lightingManager.isFlashlightEnabled() ? "green-500" : "red-500";
-        GameApp.drawText(FONT_NAME, "Flashlight: " + flashlightStatus,
-            20, 80, flashlightColor);
-
-        // Enemy info
-        final float distance = player.getPosition().dst(enemy.getPosition());
-        GameApp.drawText(FONT_NAME, "Enemy distance: " + (int)distance + "m",
-            20, 110, "red-500");
-        GameApp.drawText(FONT_NAME, "Enemy state: " + enemy.getCurrentState(),
-            20, 140, "amber-500");
-
-        // Pursuit timer
-        if (enemy.getCurrentState() == Enemy.AIState.PURSUING) {
-            final int timeRemaining = (int) (GameConfig.ENEMY_CHASE_MEMORY_DURATION
-                - enemy.getTimeSincePlayerSeen());
-            GameApp.drawText(FONT_NAME, "Pursuit time: " + timeRemaining + "s",
-                20, 170, "red-500");
-        }
-
-        // Boost status (if active)
+        // Boost notification (center top)
         if (player.isBoostActive()) {
-            final int boostTimeRemaining = (int) Math.ceil(player.getBoostTimeRemaining());
-            final String boostMultiplier = String.format("%.0f%%", (player.getSpeedMultiplier() - 1.0f) * 100f);
-            GameApp.drawText(FONT_NAME, "SPEED BOOST: +" + boostMultiplier + " (" + boostTimeRemaining + "s)",
-                20, 200, "cyan-500");
+            drawBoostNotification(player, screenWidth, screenHeight);
         }
 
-        // Exit hint (at bottom)
-        GameApp.drawText(FONT_NAME, "ESC to exit", 20, screenHeight - 30, "amber-500");
+        // Warning indicator if enemy is close
+        final float distance = player.getPosition().dst(enemy.getPosition());
+        if (distance < 10f && enemy.getCurrentState() == Enemy.AIState.PURSUING) {
+            drawDangerWarning(screenWidth, screenHeight);
+        }
+
+        // Bottom-left: Subtle controls hint
+        smallFont.setColor(TEXT_DIM);
+        smallFont.draw(batch, "ESC - Menu  |  F - Flashlight  |  SHIFT - Run", 20, 25);
+
+        // Debug info (toggle with F3)
+        if (Gdx.input.isKeyJustPressed(com.badlogic.gdx.Input.Keys.F3)) {
+            debugMode = !debugMode;
+        }
+        if (debugMode) {
+            drawDebugPanel(player, enemy, screenWidth, screenHeight);
+        }
 
         // Draw remote player names above heads
         if (remotePlayers != null && camera != null) {
-            final Vector3 world = new Vector3();
-            final Vector3 screen = new Vector3();
-            for (RemotePlayerState rp : remotePlayers) {
-                if (rp == null || rp.name == null) continue;
-                world.set(rp.x, rp.y + GameConfig.PLAYER_HEIGHT + 0.5f, rp.z);
-                screen.set(world);
-                camera.project(screen);
-                // Only draw if in front of camera and on screen
-                if (screen.z > 0 && screen.x >= 0 && screen.x <= screenWidth && screen.y >= 0 && screen.y <= screenHeight) {
-                    final float drawX = screen.x;
-                    final float drawY = screenHeight - screen.y; // Convert to UI coord system
-                    GameApp.drawText(FONT_NAME, rp.name, drawX, drawY, "white");
-                }
-            }
+            drawPlayerNames(remotePlayers, camera, screenWidth, screenHeight);
         }
 
-        GameApp.endSpriteRendering();
+        batch.end();
 
         // Re-enable depth test for 3D rendering
-        com.badlogic.gdx.Gdx.gl.glEnable(com.badlogic.gdx.graphics.GL20.GL_DEPTH_TEST);
+        Gdx.gl.glEnable(GL20.GL_DEPTH_TEST);
     }
 
     /**
-     * Draws the energy bar at the bottom center of the screen.
-     *
-     * @param energy Energy level (0.0 to 1.0)
-     * @param screenWidth Screen width in pixels
-     * @param screenHeight Screen height in pixels
+     * Draws status indicators in the top-right corner.
      */
-    private void drawEnergyBar(final float energy, final int screenWidth, final int screenHeight) {
-        // Calculate position (bottom center)
+    private void drawStatusIndicators(final LightingManager lightingManager, final Player player,
+                                       final int screenWidth, final int screenHeight) {
+        final float rightX = screenWidth - 20;
+        float currentY = screenHeight - 20;
+
+        // Flashlight indicator
+        font.setColor(lightingManager.isFlashlightEnabled() ? SUCCESS_COLOR : TEXT_DIM);
+        layout.setText(font, lightingManager.isFlashlightEnabled() ? "● LIGHT" : "○ LIGHT");
+        font.draw(batch, layout, rightX - layout.width, currentY);
+        currentY -= 35;
+
+        // Energy percentage
+        font.setColor(getEnergyColor(player.getEnergy()));
+        final String energyText = String.format("%d%% ENERGY", (int)(player.getEnergy() * 100));
+        layout.setText(font, energyText);
+        font.draw(batch, layout, rightX - layout.width, currentY);
+    }
+
+    /**
+     * Draws boost notification at center top.
+     */
+    private void drawBoostNotification(final Player player, final int screenWidth, final int screenHeight) {
+        final int boostTimeRemaining = (int) Math.ceil(player.getBoostTimeRemaining());
+        final String boostMultiplier = String.format("%.0f%%", (player.getSpeedMultiplier() - 1.0f) * 100f);
+
+        // Panel background
+        final float panelWidth = 280;
+        final float panelHeight = 60;
+        final float panelX = (screenWidth - panelWidth) / 2f;
+        final float panelY = screenHeight - 100;
+
+        shapeRenderer.begin(ShapeRenderer.ShapeType.Filled);
+
+        // Background
+        shapeRenderer.setColor(PANEL_BG);
+        shapeRenderer.rect(panelX, panelY, panelWidth, panelHeight);
+
+        // Border
+        shapeRenderer.end();
+        shapeRenderer.begin(ShapeRenderer.ShapeType.Line);
+        Gdx.gl.glLineWidth(2f);
+        shapeRenderer.setColor(BOOST_COLOR);
+        shapeRenderer.rect(panelX, panelY, panelWidth, panelHeight);
+        shapeRenderer.end();
+
+        // Text
+        font.setColor(BOOST_COLOR);
+        final String boostText = "SPEED BOOST +" + boostMultiplier;
+        layout.setText(font, boostText);
+        font.draw(batch, layout, (screenWidth - layout.width) / 2f, panelY + panelHeight - 15);
+
+        smallFont.setColor(BOOST_COLOR);
+        final String timeText = boostTimeRemaining + "s remaining";
+        layout.setText(smallFont, timeText);
+        smallFont.draw(batch, layout, (screenWidth - layout.width) / 2f, panelY + 20);
+    }
+
+    /**
+     * Draws danger warning when enemy is pursuing and close.
+     */
+    private void drawDangerWarning(final int screenWidth, final int screenHeight) {
+        // Pulsing warning text
+        final float pulse = (float) Math.abs(Math.sin(System.currentTimeMillis() / 200.0));
+        font.setColor(WARNING_COLOR.r, WARNING_COLOR.g, WARNING_COLOR.b, pulse);
+
+        final String warningText = "! DANGER !";
+        layout.setText(font, warningText);
+        font.draw(batch, layout, (screenWidth - layout.width) / 2f, screenHeight / 2 + 200);
+    }
+
+    /**
+     * Draws debug information panel.
+     */
+    private void drawDebugPanel(final Player player, final Enemy enemy,
+                                 final int screenWidth, final int screenHeight) {
+        final float panelWidth = 300;
+        final float panelHeight = 180;
+        final float panelX = 20;
+        final float panelY = screenHeight - 200;
+
+        shapeRenderer.begin(ShapeRenderer.ShapeType.Filled);
+        shapeRenderer.setColor(PANEL_BG);
+        shapeRenderer.rect(panelX, panelY, panelWidth, panelHeight);
+        shapeRenderer.end();
+
+        shapeRenderer.begin(ShapeRenderer.ShapeType.Line);
+        Gdx.gl.glLineWidth(1f);
+        shapeRenderer.setColor(ACCENT_RED_DIM);
+        shapeRenderer.rect(panelX, panelY, panelWidth, panelHeight);
+        shapeRenderer.end();
+
+        // Debug text
+        float textY = panelY + panelHeight - 15;
+        smallFont.setColor(ACCENT_RED);
+        smallFont.draw(batch, "DEBUG INFO (F3 to hide)", panelX + 10, textY);
+        textY -= 25;
+
+        smallFont.setColor(TEXT_COLOR);
+        final float distance = player.getPosition().dst(enemy.getPosition());
+        smallFont.draw(batch, "Enemy Distance: " + (int)distance + "m", panelX + 10, textY);
+        textY -= 20;
+
+        smallFont.draw(batch, "Enemy State: " + enemy.getCurrentState(), panelX + 10, textY);
+        textY -= 20;
+
+        if (enemy.getCurrentState() == Enemy.AIState.PURSUING) {
+            final int timeRemaining = (int) (GameConfig.ENEMY_CHASE_MEMORY_DURATION
+                - enemy.getTimeSincePlayerSeen());
+            smallFont.draw(batch, "Pursuit Time: " + timeRemaining + "s", panelX + 10, textY);
+            textY -= 20;
+        }
+
+        final Vector3 pos = player.getPosition();
+        smallFont.draw(batch, String.format("Position: (%.1f, %.1f, %.1f)", pos.x, pos.y, pos.z),
+            panelX + 10, textY);
+        textY -= 20;
+
+        smallFont.draw(batch, "FPS: " + Gdx.graphics.getFramesPerSecond(), panelX + 10, textY);
+    }
+
+    /**
+     * Draws player names above their heads.
+     */
+    private void drawPlayerNames(final java.util.List<RemotePlayerState> remotePlayers,
+                                  final PerspectiveCamera camera,
+                                  final int screenWidth, final int screenHeight) {
+        final Vector3 world = new Vector3();
+        final Vector3 screen = new Vector3();
+
+        for (RemotePlayerState rp : remotePlayers) {
+            if (rp == null || rp.name == null) continue;
+
+            world.set(rp.x, rp.y + GameConfig.PLAYER_HEIGHT + 0.5f, rp.z);
+            screen.set(world);
+            camera.project(screen);
+
+            // Only draw if in front of camera and on screen
+            if (screen.z > 0 && screen.x >= 0 && screen.x <= screenWidth
+                && screen.y >= 0 && screen.y <= screenHeight) {
+                final float drawX = screen.x;
+                final float drawY = screenHeight - screen.y;
+
+                // Background for name
+                layout.setText(smallFont, rp.name);
+                final float bgWidth = layout.width + 10;
+                final float bgHeight = layout.height + 6;
+
+                shapeRenderer.begin(ShapeRenderer.ShapeType.Filled);
+                shapeRenderer.setColor(PANEL_BG);
+                shapeRenderer.rect(drawX - bgWidth / 2, drawY - bgHeight / 2, bgWidth, bgHeight);
+                shapeRenderer.end();
+
+                // Name text
+                smallFont.setColor(TEXT_COLOR);
+                smallFont.draw(batch, rp.name, drawX - layout.width / 2, drawY + layout.height / 2);
+            }
+        }
+    }
+
+    /**
+     * Draws the modern energy bar at the bottom center.
+     */
+    private void drawModernEnergyBar(final float energy, final int screenWidth, final int screenHeight) {
         final float barX = (screenWidth - ENERGY_BAR_WIDTH) / 2f;
         final float barY = ENERGY_BAR_MARGIN;
 
-        // Enable blending for smooth colors
         Gdx.gl.glEnable(GL20.GL_BLEND);
         Gdx.gl.glBlendFunc(GL20.GL_SRC_ALPHA, GL20.GL_ONE_MINUS_SRC_ALPHA);
 
         shapeRenderer.begin(ShapeRenderer.ShapeType.Filled);
 
-        // Draw background (dark gray)
-        shapeRenderer.setColor(0.2f, 0.2f, 0.2f, 0.8f);
+        // Background (dark)
+        shapeRenderer.setColor(0.1f, 0.1f, 0.1f, 0.7f);
         shapeRenderer.rect(barX, barY, ENERGY_BAR_WIDTH, ENERGY_BAR_HEIGHT);
 
-        // Draw energy fill with color gradient based on energy level
+        // Energy fill with color based on level
         final Color energyColor = getEnergyColor(energy);
         shapeRenderer.setColor(energyColor);
         shapeRenderer.rect(barX, barY, ENERGY_BAR_WIDTH * energy, ENERGY_BAR_HEIGHT);
 
         shapeRenderer.end();
 
-        // Draw border
+        // Border
         shapeRenderer.begin(ShapeRenderer.ShapeType.Line);
         Gdx.gl.glLineWidth(2f);
-        shapeRenderer.setColor(0.5f, 0.5f, 0.5f, 1.0f);
+        shapeRenderer.setColor(ACCENT_RED_DIM);
         shapeRenderer.rect(barX, barY, ENERGY_BAR_WIDTH, ENERGY_BAR_HEIGHT);
         shapeRenderer.end();
     }
 
     /**
      * Gets the color for the energy bar based on current energy level.
-     *
-     * @param energy Energy level (0.0 to 1.0)
-     * @return Color for the energy bar
      */
     private Color getEnergyColor(final float energy) {
         if (energy > 0.5f) {
@@ -203,6 +360,15 @@ public class GameUI {
         GameApp.disposeFont(FONT_NAME);
         if (shapeRenderer != null) {
             shapeRenderer.dispose();
+        }
+        if (batch != null) {
+            batch.dispose();
+        }
+        if (font != null) {
+            font.dispose();
+        }
+        if (smallFont != null) {
+            smallFont.dispose();
         }
     }
 }

@@ -2,11 +2,13 @@ package nl.saxion.game.mazesahur.screen;
 
 import com.badlogic.gdx.Gdx;
 import com.badlogic.gdx.Input;
-import com.badlogic.gdx.Screen;
 import com.badlogic.gdx.graphics.GL20;
+import nl.saxion.gameapp.screens.ScalableGameScreen;
 import com.badlogic.gdx.graphics.PerspectiveCamera;
+import com.badlogic.gdx.graphics.OrthographicCamera;
 import com.badlogic.gdx.graphics.Pixmap;
 import com.badlogic.gdx.graphics.Texture;
+import com.badlogic.gdx.graphics.Color;
 import com.badlogic.gdx.files.FileHandle;
 import com.badlogic.gdx.graphics.g3d.Environment;
 import com.badlogic.gdx.graphics.g3d.Model;
@@ -17,8 +19,15 @@ import com.badlogic.gdx.graphics.g3d.environment.DirectionalLight;
 import com.badlogic.gdx.graphics.g3d.model.Animation;
 import com.badlogic.gdx.graphics.g3d.utils.AnimationController;
 import com.badlogic.gdx.graphics.g3d.loader.G3dModelLoader;
+import com.badlogic.gdx.graphics.glutils.ShapeRenderer;
+import com.badlogic.gdx.graphics.g2d.BitmapFont;
+import com.badlogic.gdx.graphics.g2d.GlyphLayout;
+import com.badlogic.gdx.graphics.g2d.SpriteBatch;
+import com.badlogic.gdx.math.Matrix4;
+import com.badlogic.gdx.math.Vector2;
 import com.badlogic.gdx.math.Vector3;
 import com.badlogic.gdx.math.collision.BoundingBox;
+import com.badlogic.gdx.math.Rectangle;
 import com.badlogic.gdx.utils.JsonReader;
 import com.badlogic.gdx.graphics.g3d.utils.TextureProvider;
 import com.badlogic.gdx.graphics.g3d.Material;
@@ -31,21 +40,52 @@ import nl.saxion.gameapp.GameApp;
 import java.util.function.Consumer;
 
 /**
- * Character selection screen where players choose their skin/model.
- * Displayed before entering the game.
+ * Modern character selection screen where players choose their skin/model.
+ * Matches the menu screen's dark theme and styling.
  *
  * @author Tim
  * @version 1.0
  */
-public class CharacterSelectionScreen implements Screen {
+public class CharacterSelectionScreen extends ScalableGameScreen {
     private static final String FONT_NAME = "ui";
-    private static final int FONT_SIZE = 32;
+    private static final int FONT_SIZE = 20;
+
+    // Virtual viewport dimensions (same as MenuScreen)
+    private static final int VIEWPORT_WIDTH = 1280;
+    private static final int VIEWPORT_HEIGHT = 720;
+
+    // Colors - Modern dark theme matching menu
+    private static final Color PANEL_BG = new Color(0.08f, 0.08f, 0.1f, 0.92f);
+    private static final Color BUTTON_COLOR = new Color(0.12f, 0.12f, 0.15f, 0.95f);
+    private static final Color BUTTON_HOVER_COLOR = new Color(0.5f, 0.05f, 0.05f, 0.95f);
+    private static final Color BUTTON_BORDER_COLOR = new Color(0.7f, 0.1f, 0.1f, 1.0f);
+    private static final Color BUTTON_BORDER_HOVER = new Color(1.0f, 0.2f, 0.2f, 1.0f);
+    private static final Color TITLE_COLOR = new Color(0.9f, 0.15f, 0.15f, 1.0f);
+    private static final Color TEXT_COLOR = new Color(0.9f, 0.9f, 0.9f, 1.0f);
+    private static final Color TEXT_DIM = new Color(0.6f, 0.6f, 0.6f, 0.8f);
 
     private int selectedIndex = 0;
     private final CharacterType[] characters = CharacterType.values();
     private boolean keyPressed = false;
     private CharacterType lastPreviewType = null;
     private float previewRotation = 0f;
+
+    // UI rendering
+    private SpriteBatch batch;
+    private ShapeRenderer shapeRenderer;
+    private BitmapFont titleFont;
+    private BitmapFont buttonFont;
+    private BitmapFont smallFont;
+    private GlyphLayout layout;
+    private Rectangle[] characterButtons;
+    private Rectangle selectButton;
+    private final Matrix4 uiProjection = new Matrix4();
+    private final Vector2 mouseBuffer = new Vector2();
+    private float viewportScale = 1f;
+    private float viewportWidth = VIEWPORT_WIDTH;
+    private float viewportHeight = VIEWPORT_HEIGHT;
+    private float viewportX = 0f;
+    private float viewportY = 0f;
 
     // Callback for when character is selected
     private final Consumer<CharacterType> onCharacterSelected;
@@ -62,15 +102,34 @@ public class CharacterSelectionScreen implements Screen {
     private Texture previewFallbackTexture;
 
     public CharacterSelectionScreen(final Consumer<CharacterType> onCharacterSelected) {
+        super(VIEWPORT_WIDTH, VIEWPORT_HEIGHT);
         this.onCharacterSelected = onCharacterSelected;
     }
 
     @Override
     public void show() {
-        System.out.println("[CharacterSelectionScreen] Showing character selection");
-        GameApp.addFont(FONT_NAME, "fonts/basic.ttf", FONT_SIZE);
+        System.out.println("[CharacterSelectionScreen] Showing modern character selection");
+
+        batch = new SpriteBatch();
+        shapeRenderer = new ShapeRenderer();
+        layout = new GlyphLayout();
+
+        // Create fonts with modern styling
+        titleFont = new BitmapFont();
+        titleFont.getData().setScale(3.5f);
+        titleFont.setColor(TITLE_COLOR);
+
+        buttonFont = new BitmapFont();
+        buttonFont.getData().setScale(1.8f);
+        buttonFont.setColor(TEXT_COLOR);
+
+        smallFont = new BitmapFont();
+        smallFont.getData().setScale(1.2f);
+        smallFont.setColor(TEXT_DIM);
 
         initPreviewRenderer();
+        initializeButtons();
+        updateViewportTransform();
 
         // Load saved character selection
         final String savedCharacter = Gdx.app.getPreferences("MazeSahur").getString("selectedCharacter", "DEFAULT");
@@ -82,24 +141,84 @@ public class CharacterSelectionScreen implements Screen {
         }
     }
 
+    private void initializeButtons() {
+        // Use virtual viewport dimensions for consistent layout
+        final int screenWidth = VIEWPORT_WIDTH;
+        final int screenHeight = VIEWPORT_HEIGHT;
+
+        characterButtons = new Rectangle[characters.length];
+
+        // Right panel takes up right half of screen
+        final int buttonWidth = 350;
+        final int buttonHeight = 70;
+        final int buttonSpacing = 15;
+        // Center buttons in the right half of the screen
+        final int rightPanelStart = screenWidth / 2;
+        final int rightPanelX = rightPanelStart + (screenWidth / 2 - buttonWidth) / 2;
+
+        int startY = screenHeight / 2 + (characters.length * (buttonHeight + buttonSpacing)) / 2;
+
+        for (int i = 0; i < characters.length; i++) {
+            characterButtons[i] = new Rectangle(
+                rightPanelX,
+                startY - i * (buttonHeight + buttonSpacing),
+                buttonWidth,
+                buttonHeight
+            );
+        }
+
+        // Select button at bottom, centered in right half
+        selectButton = new Rectangle(
+            rightPanelX,
+            100,
+            buttonWidth,
+            buttonHeight
+        );
+    }
+
     @Override
     public void render(float delta) {
         // Clear screen with dark background
-        Gdx.gl.glClearColor(0.1f, 0.1f, 0.1f, 1f);
+        Gdx.gl.glClearColor(0.05f, 0.05f, 0.06f, 1f);
         Gdx.gl.glClear(GL20.GL_COLOR_BUFFER_BIT | GL20.GL_DEPTH_BUFFER_BIT);
+
+        // Call parent to set up viewport/camera
+        super.render(delta);
+
+        updateViewportTransform();
 
         // Handle input
         handleInput();
 
-        // Render preview before UI so depth buffer is correct
-        renderPreview(delta);
+        // Render modern UI first (while viewport is correctly set)
+        renderModernUI();
 
-        // Render UI
-        renderUI();
+        // Render 3D preview on left side (changes viewport temporarily)
+        renderPreview(delta);
     }
 
     private void handleInput() {
-        // Prevent key repeat - only register on key press, not hold
+        // Convert screen coordinates to the virtual viewport (handles letterboxing)
+        final Vector2 mousePos = getMouseInViewport();
+        final float mouseX = mousePos.x;
+        final float mouseY = mousePos.y;
+
+        // Check character button hover/click
+        for (int i = 0; i < characterButtons.length; i++) {
+            if (characterButtons[i].contains(mouseX, mouseY)) {
+                selectedIndex = i;
+                if (Gdx.input.justTouched()) {
+                    selectCharacter();
+                }
+            }
+        }
+
+        // Check select button
+        if (selectButton.contains(mouseX, mouseY) && Gdx.input.justTouched()) {
+            selectCharacter();
+        }
+
+        // Keyboard input (prevent key repeat)
         final boolean upPressed = Gdx.input.isKeyPressed(Input.Keys.UP) || Gdx.input.isKeyPressed(Input.Keys.W);
         final boolean downPressed = Gdx.input.isKeyPressed(Input.Keys.DOWN) || Gdx.input.isKeyPressed(Input.Keys.S);
         final boolean enterPressed = Gdx.input.isKeyPressed(Input.Keys.ENTER) || Gdx.input.isKeyPressed(Input.Keys.SPACE);
@@ -117,49 +236,124 @@ public class CharacterSelectionScreen implements Screen {
             }
         }
 
-        // Reset key pressed flag when all keys are released
         if (!upPressed && !downPressed && !enterPressed) {
             keyPressed = false;
         }
     }
 
-    private void renderUI() {
-        final int centerX = Gdx.graphics.getWidth() / 2;
-        final int startY = Gdx.graphics.getHeight() - 100;
+    private void renderModernUI() {
+        final int screenWidth = VIEWPORT_WIDTH;
+        final int screenHeight = VIEWPORT_HEIGHT;
 
-        // Begin sprite rendering for text drawing
-        GameApp.startSpriteRendering();
+        // Convert screen to virtual viewport coordinates
+        final Vector2 mousePos = getMouseInViewport();
+        final float mouseX = mousePos.x;
+        final float mouseY = mousePos.y;
 
-        // Title
-        GameApp.drawText(FONT_NAME, "SELECT YOUR CHARACTER", centerX, startY, "white");
+        // Ensure batch and shapes use the virtual viewport projection
+        batch.setProjectionMatrix(uiProjection);
+        shapeRenderer.setProjectionMatrix(uiProjection);
 
-        // Character list
-        int yOffset = startY - 100;
-        for (int i = 0; i < characters.length; i++) {
+        // Enable blending for transparency
+        Gdx.gl.glEnable(GL20.GL_BLEND);
+        Gdx.gl.glBlendFunc(GL20.GL_SRC_ALPHA, GL20.GL_ONE_MINUS_SRC_ALPHA);
+
+        // GameApp uses drawText which sets up the camera correctly
+        // We'll piggyback on that by using GameApp's drawText for positioning
+
+        shapeRenderer.begin(ShapeRenderer.ShapeType.Filled);
+
+        // Draw character selection buttons
+        for (int i = 0; i < characterButtons.length; i++) {
+            final Rectangle button = characterButtons[i];
+            final boolean isHovered = button.contains(mouseX, mouseY);
+            final boolean isSelected = i == selectedIndex;
+
+            Color bgColor = BUTTON_COLOR;
+            if (isSelected) {
+                bgColor = BUTTON_HOVER_COLOR;
+            } else if (isHovered) {
+                bgColor = new Color(0.18f, 0.18f, 0.2f, 0.95f);
+            }
+
+            shapeRenderer.setColor(bgColor);
+            shapeRenderer.rect(button.x, button.y, button.width, button.height);
+        }
+
+        // Draw select button
+        final boolean selectHovered = selectButton.contains(mouseX, mouseY);
+        shapeRenderer.setColor(selectHovered ? BUTTON_HOVER_COLOR : BUTTON_COLOR);
+        shapeRenderer.rect(selectButton.x, selectButton.y, selectButton.width, selectButton.height);
+
+        shapeRenderer.end();
+
+        // Draw button borders
+        shapeRenderer.begin(ShapeRenderer.ShapeType.Line);
+        Gdx.gl.glLineWidth(3f);
+
+        for (int i = 0; i < characterButtons.length; i++) {
+            final Rectangle button = characterButtons[i];
+            final boolean isHovered = button.contains(mouseX, mouseY);
+            final boolean isSelected = i == selectedIndex;
+
+            Color borderColor = BUTTON_BORDER_COLOR;
+            if (isSelected || isHovered) {
+                borderColor = BUTTON_BORDER_HOVER;
+            }
+
+            shapeRenderer.setColor(borderColor);
+            shapeRenderer.rect(button.x, button.y, button.width, button.height);
+        }
+
+        // Select button border
+        shapeRenderer.setColor(selectHovered ? BUTTON_BORDER_HOVER : BUTTON_BORDER_COLOR);
+        shapeRenderer.rect(selectButton.x, selectButton.y, selectButton.width, selectButton.height);
+
+        shapeRenderer.end();
+
+        // Draw text using batch with same projection as shapes
+        batch.begin();
+
+        // Title at top
+        titleFont.setColor(TITLE_COLOR);
+        layout.setText(titleFont, "SELECT CHARACTER");
+        titleFont.draw(batch, layout, (screenWidth - layout.width) / 2f, screenHeight - 50);
+
+        // Character names on buttons
+        for (int i = 0; i < characterButtons.length; i++) {
+            final Rectangle button = characterButtons[i];
             final CharacterType character = characters[i];
             final boolean isSelected = i == selectedIndex;
 
-            // Selection indicator and character name
-            final String prefix = isSelected ? "> " : "  ";
-            final String text = prefix + character.getDisplayName();
-            final String color = isSelected ? "cyan-400" : "gray-400";
-
-            GameApp.drawText(FONT_NAME, text, centerX, yOffset, color);
-
-            yOffset -= isSelected ? 80 : 60;
+            buttonFont.setColor(isSelected ? Color.WHITE : TEXT_COLOR);
+            layout.setText(buttonFont, character.getDisplayName());
+            buttonFont.draw(batch, layout,
+                button.x + (button.width - layout.width) / 2f,
+                button.y + (button.height + layout.height) / 2f);
         }
 
-        // Instructions
-        GameApp.drawText(FONT_NAME, "Use Arrow Keys or W/S to navigate", centerX, 120, "gray-500");
-        GameApp.drawText(FONT_NAME, "Press ENTER or SPACE to select", centerX, 80, "gray-500");
+        // Select button text
+        buttonFont.setColor(Color.WHITE);
+        layout.setText(buttonFont, "CONFIRM SELECTION");
+        buttonFont.draw(batch, layout,
+            selectButton.x + (selectButton.width - layout.width) / 2f,
+            selectButton.y + (selectButton.height + layout.height) / 2f);
 
-        // Preview info
-        final CharacterType selected = characters[selectedIndex];
-        final String previewText = "Character: " + selected.getDisplayName();
-        GameApp.drawText(FONT_NAME, previewText, centerX, 40, "green-400");
+        // Instructions at bottom
+        smallFont.setColor(TEXT_DIM);
+        final String instructions = "Arrow Keys or W/S to navigate  •  ENTER or Click to select";
+        layout.setText(smallFont, instructions);
+        smallFont.draw(batch, layout, (screenWidth - layout.width) / 2f, 40);
 
-        // Finish sprite rendering
-        GameApp.endSpriteRendering();
+        // Preview label on left side
+        titleFont.getData().setScale(2.0f);
+        titleFont.setColor(TITLE_COLOR);
+        final String previewLabel = "PREVIEW";
+        layout.setText(titleFont, previewLabel);
+        titleFont.draw(batch, layout, (screenWidth / 2f - layout.width) / 2f, screenHeight - 50);
+        titleFont.getData().setScale(3.5f); // Reset scale
+
+        batch.end();
     }
 
     private void initPreviewRenderer() {
@@ -168,7 +362,8 @@ public class CharacterSelectionScreen implements Screen {
         previewEnvironment.set(new ColorAttribute(ColorAttribute.AmbientLight, 0.6f, 0.6f, 0.6f, 1f));
         previewEnvironment.add(new DirectionalLight().set(1f, 1f, 1f, -1f, -0.8f, -0.2f));
 
-        previewCamera = new PerspectiveCamera(50f, Gdx.graphics.getWidth() / 2f, Gdx.graphics.getHeight());
+        // Use virtual viewport dimensions for camera (left half)
+        previewCamera = new PerspectiveCamera(50f, VIEWPORT_WIDTH / 2f, VIEWPORT_HEIGHT);
         previewCamera.position.set(0f, 1.3f, 3.2f);
         previewCamera.lookAt(0f, 1.0f, 0f);
         previewCamera.near = 0.05f;
@@ -183,12 +378,13 @@ public class CharacterSelectionScreen implements Screen {
 
         final CharacterType selected = characters[selectedIndex];
 
-        // Update viewport for left side preview
-        final int previewWidth = Gdx.graphics.getWidth() / 2;
-        final int previewHeight = Gdx.graphics.getHeight();
-        Gdx.gl.glViewport(0, 0, previewWidth, previewHeight);
-        previewCamera.viewportWidth = previewWidth;
-        previewCamera.viewportHeight = previewHeight;
+        // Set viewport for left half of virtual viewport
+        final int previewWidth = (int) (viewportWidth / 2f);
+        final int previewHeight = (int) viewportHeight;
+        Gdx.gl.glViewport((int) viewportX, (int) viewportY, previewWidth, previewHeight);
+
+        previewCamera.viewportWidth = VIEWPORT_WIDTH / 2f;
+        previewCamera.viewportHeight = VIEWPORT_HEIGHT;
         previewCamera.update();
 
         // Load model if needed
@@ -196,15 +392,15 @@ public class CharacterSelectionScreen implements Screen {
 
         final ModelInstance instance = previewInstances.get(selected);
         final AnimationController controller = previewControllers.get(selected);
-        final float scale = previewScales.getOrDefault(selected, 1f);
+        final float modelScale = previewScales.getOrDefault(selected, 1f);
         final float footOffset = previewFootOffsets.getOrDefault(selected, 0f);
 
         // Rotate and position
-        previewRotation += delta * 30f; // degrees per second
+        previewRotation += delta * 30f;
         instance.transform.idt();
-        instance.transform.translate(0f, footOffset * scale, 0f);
+        instance.transform.translate(0f, footOffset * modelScale, 0f);
         instance.transform.rotate(Vector3.Y, previewRotation);
-        instance.transform.scale(scale, scale, scale);
+        instance.transform.scale(modelScale, modelScale, modelScale);
         instance.calculateTransforms();
 
         if (controller != null) {
@@ -218,14 +414,41 @@ public class CharacterSelectionScreen implements Screen {
         previewBatch.end();
         Gdx.gl.glDisable(GL20.GL_DEPTH_TEST);
 
-        // Restore full viewport for UI
-        Gdx.gl.glViewport(0, 0, Gdx.graphics.getWidth(), Gdx.graphics.getHeight());
+        // Restore full viewport for UI rendering
+        Gdx.gl.glViewport((int) viewportX, (int) viewportY, (int) viewportWidth, (int) viewportHeight);
+    }
+
+    private void updateViewportTransform() {
+        final float windowWidth = Gdx.graphics.getWidth();
+        final float windowHeight = Gdx.graphics.getHeight();
+        final float scaleX = windowWidth / VIEWPORT_WIDTH;
+        final float scaleY = windowHeight / VIEWPORT_HEIGHT;
+        viewportScale = Math.min(scaleX, scaleY);
+        viewportWidth = VIEWPORT_WIDTH * viewportScale;
+        viewportHeight = VIEWPORT_HEIGHT * viewportScale;
+        viewportX = (windowWidth - viewportWidth) / 2f;
+        viewportY = (windowHeight - viewportHeight) / 2f;
+
+        uiProjection.setToOrtho2D(0f, 0f, VIEWPORT_WIDTH, VIEWPORT_HEIGHT);
+        if (batch != null) {
+            batch.setProjectionMatrix(uiProjection);
+        }
+        if (shapeRenderer != null) {
+            shapeRenderer.setProjectionMatrix(uiProjection);
+        }
+    }
+
+    private Vector2 getMouseInViewport() {
+        final float screenX = Gdx.input.getX();
+        final float screenY = Gdx.input.getY();
+        final float virtualX = (screenX - viewportX) / viewportScale;
+        final float virtualY = (Gdx.graphics.getHeight() - screenY - viewportY) / viewportScale;
+        return mouseBuffer.set(virtualX, virtualY);
     }
 
     private void ensurePreviewModel(final CharacterType type) {
         if (previewModels.containsKey(type)) {
             if (lastPreviewType != type) {
-                // Restart animation when switching
                 final AnimationController controller = previewControllers.get(type);
                 if (controller != null) {
                     controller.setAnimation("walking", -1);
@@ -244,13 +467,11 @@ public class CharacterSelectionScreen implements Screen {
         final Model model = loader.loadModel(modelFile, createTextureProvider(modelFile));
         applyMaterialTextures(model, modelFile.parent());
 
-        // Ensure the walking animation is named consistently
         if (model.animations.size > 0) {
             final Animation walkingAnim = model.animations.first();
             walkingAnim.id = "walking";
         }
 
-        // Calculate scale and foot offset similar to MazeRenderer
         final ModelInstance tempInstance = new ModelInstance(model);
         final BoundingBox bounds = new BoundingBox();
         tempInstance.calculateBoundingBox(bounds);
@@ -261,7 +482,6 @@ public class CharacterSelectionScreen implements Screen {
             scale = (GameConfig.PLAYER_HEIGHT / dimensions.y) * 1.1f;
         }
 
-        // Create instance and controller
         final ModelInstance instance = new ModelInstance(model);
         AnimationController controller = null;
         if (model.animations.size > 0) {
@@ -289,28 +509,64 @@ public class CharacterSelectionScreen implements Screen {
 
             final FileHandle diffuseFile = pickTexture(baseDir, isHair, "diffuse");
             if (diffuseFile != null) {
-                mat.set(TextureAttribute.createDiffuse(new Texture(diffuseFile)));
+                final Texture diffuseTex = new Texture(diffuseFile, true);
+                diffuseTex.setFilter(
+                    Texture.TextureFilter.MipMapLinearLinear,
+                    Texture.TextureFilter.Linear
+                );
+                diffuseTex.setWrap(
+                    Texture.TextureWrap.Repeat,
+                    Texture.TextureWrap.Repeat
+                );
+                mat.set(TextureAttribute.createDiffuse(diffuseTex));
             }
 
             final FileHandle normalFile = pickTexture(baseDir, isHair, "normal");
             if (normalFile != null) {
-                mat.set(TextureAttribute.createNormal(new Texture(normalFile)));
+                final Texture normalTex = new Texture(normalFile, true);
+                normalTex.setFilter(
+                    Texture.TextureFilter.MipMapLinearLinear,
+                    Texture.TextureFilter.Linear
+                );
+                normalTex.setWrap(
+                    Texture.TextureWrap.Repeat,
+                    Texture.TextureWrap.Repeat
+                );
+                mat.set(TextureAttribute.createNormal(normalTex));
             }
 
             final FileHandle specFile = pickTexture(baseDir, isHair, "specular");
             if (specFile != null) {
-                mat.set(TextureAttribute.createSpecular(new Texture(specFile)));
+                final Texture specTex = new Texture(specFile, true);
+                specTex.setFilter(
+                    Texture.TextureFilter.MipMapLinearLinear,
+                    Texture.TextureFilter.Linear
+                );
+                specTex.setWrap(
+                    Texture.TextureWrap.Repeat,
+                    Texture.TextureWrap.Repeat
+                );
+                mat.set(TextureAttribute.createSpecular(specTex));
             }
         }
     }
 
     private FileHandle pickTexture(final FileHandle baseDir, final boolean hair, final String key) {
         final String suffix = key.substring(0, 1).toUpperCase() + key.substring(1).toLowerCase();
-        final String primary = hair ? "Ch33_1002_" + suffix + ".png" : "Ch33_1001_" + suffix + ".png";
-        FileHandle handle = baseDir.child(primary);
-        if (handle.exists()) {
-            return handle;
+
+        // Try both Ch33 (Big Business) and Ch06 (Soundcloud) naming patterns
+        final String[] primaries = hair
+            ? new String[]{"Ch33_1002_" + suffix + ".png", "Ch06_1002_" + suffix + ".png"}
+            : new String[]{"Ch33_1001_" + suffix + ".png", "Ch06_1001_" + suffix + ".png"};
+
+        for (String primary : primaries) {
+            FileHandle handle = baseDir.child(primary);
+            if (handle.exists()) {
+                return handle;
+            }
         }
+
+        // Fallback: search for any file containing the key
         for (FileHandle fh : baseDir.list()) {
             if (fh.name().toLowerCase().contains(key.toLowerCase())) {
                 return fh;
@@ -361,20 +617,10 @@ public class CharacterSelectionScreen implements Screen {
         }
     }
 
-    /**
-     * Gets the currently selected character type.
-     *
-     * @return Selected character type
-     */
     public CharacterType getSelectedCharacter() {
         return characters[selectedIndex];
     }
 
-    /**
-     * Gets the saved character selection from preferences.
-     *
-     * @return Saved character type, or DEFAULT if none saved
-     */
     public static CharacterType getSavedCharacter() {
         final String savedName = Gdx.app.getPreferences("MazeSahur").getString("selectedCharacter", "DEFAULT");
         return CharacterType.fromString(savedName);
@@ -382,26 +628,32 @@ public class CharacterSelectionScreen implements Screen {
 
     @Override
     public void resize(int width, int height) {
-        // Not needed for this simple UI
-    }
-
-    @Override
-    public void pause() {
-        // Not needed
-    }
-
-    @Override
-    public void resume() {
-        // Not needed
+        super.resize(width, height);
+        // Buttons use virtual coordinates, so no need to reinitialize
     }
 
     @Override
     public void hide() {
-        // Not needed
+        // Clean up resources when hiding
     }
 
     @Override
     public void dispose() {
+        if (batch != null) {
+            batch.dispose();
+        }
+        if (shapeRenderer != null) {
+            shapeRenderer.dispose();
+        }
+        if (titleFont != null) {
+            titleFont.dispose();
+        }
+        if (buttonFont != null) {
+            buttonFont.dispose();
+        }
+        if (smallFont != null) {
+            smallFont.dispose();
+        }
         if (previewBatch != null) {
             previewBatch.dispose();
         }
