@@ -82,7 +82,7 @@ public class RoomManager {
         }
 
         final Room room = rooms.computeIfAbsent(req.room, id -> new Room(id, deriveSeed(id), mapper));
-        final PlayerSession session = room.addPlayer(channel, req.name);
+        final PlayerSession session = room.addPlayer(channel, req.name, req.characterType);
         sessions.put(channel, session);
 
         final var joined = room.buildJoinedResponse();

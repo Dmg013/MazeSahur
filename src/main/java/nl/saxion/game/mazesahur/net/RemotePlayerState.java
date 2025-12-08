@@ -13,4 +13,5 @@ public class RemotePlayerState {
     public String animation; // Current animation name ("idle", "walking", "running", etc.)
     public boolean isMoving; // Whether the player is currently moving
     public boolean isRunning; // Whether the player is running/sprinting
+    public String characterType; // Character skin/model type (e.g., "DEFAULT", "BIG_BUSINESS")
 }

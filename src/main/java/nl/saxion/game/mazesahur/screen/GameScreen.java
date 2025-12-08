@@ -9,6 +9,7 @@ import com.badlogic.gdx.math.Vector3;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Random;
+import nl.saxion.game.mazesahur.model.CharacterType;
 import nl.saxion.game.mazesahur.net.MultiplayerSession;
 import nl.saxion.game.mazesahur.net.RemotePlayerState;
 import nl.saxion.game.mazesahur.config.GameConfig;
@@ -80,12 +81,13 @@ public class GameScreen extends ScalableGameScreen {
     private final boolean networked;
     private List<RemotePlayerState> remotePlayers = new ArrayList<>();
     private boolean useNetworkEnemy = false;
+    private final CharacterType localCharacterType;
 
     /**
      * Creates a new game screen with default settings.
      */
     public GameScreen() {
-        this(null, null);
+        this(null, null, CharacterSelectionScreen.getSavedCharacter());
     }
 
     /**
@@ -95,7 +97,7 @@ public class GameScreen extends ScalableGameScreen {
      * @param mazeSeed Seed to use for maze generation (null = random)
      */
     public GameScreen(final Long mazeSeed) {
-        this(mazeSeed, null);
+        this(mazeSeed, null, CharacterSelectionScreen.getSavedCharacter());
     }
 
     /**
@@ -105,10 +107,22 @@ public class GameScreen extends ScalableGameScreen {
      * @param session Multiplayer session (null for singleplayer)
      */
     public GameScreen(final Long mazeSeed, final MultiplayerSession session) {
+        this(mazeSeed, session, CharacterSelectionScreen.getSavedCharacter());
+    }
+
+    /**
+     * Creates a new game screen with optional seed, multiplayer session, and character selection.
+     *
+     * @param mazeSeed Seed to use for maze generation (null = random)
+     * @param session Multiplayer session (null for singleplayer)
+     * @param characterType Character skin to use (persisted to networking)
+     */
+    public GameScreen(final Long mazeSeed, final MultiplayerSession session, final CharacterType characterType) {
         super(1280, 720);
 
         this.multiplayerSession = session;
         this.networked = session != null;
+        this.localCharacterType = characterType != null ? characterType : CharacterType.DEFAULT;
 
         final long seed = mazeSeed != null
             ? mazeSeed
@@ -133,7 +147,8 @@ public class GameScreen extends ScalableGameScreen {
         pitch = 0;
         firstMouse = true;
 
-        System.out.println("[GameScreen] Using maze seed: " + seed + " networked=" + networked);
+        System.out.println("[GameScreen] Using maze seed: " + seed + " networked=" + networked
+            + " character=" + localCharacterType.name());
     }
 
     @Override

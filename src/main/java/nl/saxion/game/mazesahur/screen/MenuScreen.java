@@ -12,14 +12,15 @@ import com.badlogic.gdx.math.Interpolation;
 import com.badlogic.gdx.math.MathUtils;
 import com.badlogic.gdx.math.Rectangle;
 import com.badlogic.gdx.utils.Align;
-import nl.saxion.gameapp.GameApp;
-import nl.saxion.gameapp.screens.ScalableGameScreen;
+import java.util.function.Consumer;
+import com.badlogic.gdx.Input;
+import com.badlogic.gdx.InputAdapter;
+import nl.saxion.game.mazesahur.model.CharacterType;
 import nl.saxion.game.mazesahur.net.MultiplayerSession;
 import nl.saxion.game.mazesahur.net.NetworkDefaults;
 import nl.saxion.game.mazesahur.net.NetworkSessionConfig;
-import com.badlogic.gdx.Gdx;
-import com.badlogic.gdx.Input;
-import com.badlogic.gdx.InputAdapter;
+import nl.saxion.gameapp.GameApp;
+import nl.saxion.gameapp.screens.ScalableGameScreen;
 
 /**
  * Main menu screen with Play, Settings, and Multiplayer buttons.
@@ -405,6 +406,16 @@ public class MenuScreen extends ScalableGameScreen {
         buttonFont.draw(batch, text, textX, textY);
     }
 
+    private void openCharacterSelection(final String screenName, final Consumer<CharacterType> onSelected) {
+        final CharacterSelectionScreen selectionScreen = new CharacterSelectionScreen(characterType -> {
+            if (onSelected != null) {
+                onSelected.accept(characterType);
+            }
+        });
+        GameApp.addScreen(screenName, selectionScreen);
+        GameApp.switchScreen(screenName);
+    }
+
     /**
      * Called when the Play button is clicked.
      * Starts the game.
@@ -412,11 +423,14 @@ public class MenuScreen extends ScalableGameScreen {
     private void onPlayClicked() {
         System.out.println("[MenuScreen] Play button clicked - Starting game...");
 
-        // Create and add GameScreen
-        GameApp.addScreen("Game", new GameScreen());
+        openCharacterSelection("CharacterSelectSingleplayer", selectedCharacter -> {
+            // Ensure window is correct size for game (1280x720)
+            Gdx.graphics.setWindowedMode(1280, 720);
 
-        // Switch to game screen
-        GameApp.switchScreen("Game");
+            final GameScreen gameScreen = new GameScreen(null, null, selectedCharacter);
+            GameApp.addScreen("Game", gameScreen);
+            GameApp.switchScreen("Game");
+        });
     }
 
     /**
@@ -443,20 +457,27 @@ public class MenuScreen extends ScalableGameScreen {
     }
 
     private void startMultiplayer(final String serverUrl, final String room, final String playerName) {
-        final NetworkSessionConfig config = new NetworkSessionConfig(serverUrl, room, playerName);
-
-        final MultiplayerSession session = new MultiplayerSession(config);
-        final boolean joined = session.connectAndAwaitJoin(java.time.Duration.ofSeconds(5));
-        if (!joined) {
-            System.out.println("[MenuScreen] Multiplayer join failed");
-            return;
-        }
-
-        final GameScreen gameScreen = new GameScreen(session.getSeed(), session);
-        GameApp.addScreen("Game", gameScreen);
-        GameApp.switchScreen("Game");
         showMultiplayerForm = false;
         Gdx.input.setInputProcessor(null);
+
+        openCharacterSelection("CharacterSelectMultiplayer", selectedCharacter -> {
+            final NetworkSessionConfig config = new NetworkSessionConfig(serverUrl, room, playerName, selectedCharacter);
+
+            final MultiplayerSession session = new MultiplayerSession(config);
+            final boolean joined = session.connectAndAwaitJoin(java.time.Duration.ofSeconds(5));
+            if (!joined) {
+                System.out.println("[MenuScreen] Multiplayer join failed");
+                GameApp.switchScreen("Menu");
+                return;
+            }
+
+            // Ensure window is correct size for game (1280x720)
+            Gdx.graphics.setWindowedMode(1280, 720);
+
+            final GameScreen gameScreen = new GameScreen(session.getSeed(), session, selectedCharacter);
+            GameApp.addScreen("Game", gameScreen);
+            GameApp.switchScreen("Game");
+        });
     }
 
     private void renderMultiplayerForm(final int mouseX, final int mouseY) {

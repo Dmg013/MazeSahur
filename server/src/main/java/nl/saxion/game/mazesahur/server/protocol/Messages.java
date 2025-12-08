@@ -22,6 +22,7 @@ public final class Messages {
     public static final class JoinRequest extends BaseMessage {
         public String room;
         public String name;
+        public String characterType;
     }
 
     @JsonIgnoreProperties(ignoreUnknown = true)
@@ -56,6 +57,7 @@ public final class Messages {
         public float y;
         public float z;
         public float yaw;
+        public String characterType;
     }
 
     public static final class EnemyState {

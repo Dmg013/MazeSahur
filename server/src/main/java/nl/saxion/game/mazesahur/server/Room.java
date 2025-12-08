@@ -10,6 +10,7 @@ import java.util.Objects;
 import java.util.UUID;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.CopyOnWriteArraySet;
+import nl.saxion.game.mazesahur.model.CharacterType;
 import nl.saxion.game.mazesahur.config.GameConfig;
 import nl.saxion.game.mazesahur.entity.Enemy;
 import nl.saxion.game.mazesahur.entity.Player;
@@ -60,11 +61,14 @@ public class Room {
         return maze;
     }
 
-    public PlayerSession addPlayer(final Channel channel, final String playerName) {
+    public PlayerSession addPlayer(final Channel channel, final String playerName, final String characterType) {
         final String playerId = UUID.randomUUID().toString();
         final PlayerState state = new PlayerState();
         state.id = playerId;
         state.name = playerName;
+        state.characterType = characterType != null && !characterType.isEmpty()
+            ? characterType
+            : CharacterType.DEFAULT.name();
         final float[] spawn = defaultSpawnPosition();
         state.x = spawn[0];
         state.y = GameConfig.PLAYER_HEIGHT;

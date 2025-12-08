@@ -11,6 +11,7 @@ import java.util.Optional;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.atomic.AtomicLong;
+import nl.saxion.game.mazesahur.model.CharacterType;
 
 /**
  * Manages a multiplayer WebSocket session: join, input sending, and receiving state snapshots.
@@ -104,6 +105,8 @@ public class MultiplayerSession implements NetworkClientCallback {
         joinMsg.type = "join";
         joinMsg.room = config.getRoomId();
         joinMsg.name = config.getPlayerName();
+        final CharacterType characterType = config.getCharacterType();
+        joinMsg.characterType = characterType != null ? characterType.name() : CharacterType.DEFAULT.name();
         try {
             networkClient.sendText(mapper.writeValueAsString(joinMsg));
         } catch (Exception e) {
@@ -177,6 +180,7 @@ public class MultiplayerSession implements NetworkClientCallback {
         public String type;
         public String room;
         public String name;
+        public String characterType;
     }
 
     private static final class InputMessage {
