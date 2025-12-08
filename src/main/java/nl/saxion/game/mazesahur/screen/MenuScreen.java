@@ -424,12 +424,16 @@ public class MenuScreen extends ScalableGameScreen {
         System.out.println("[MenuScreen] Play button clicked - Starting game...");
 
         openCharacterSelection("CharacterSelectSingleplayer", selectedCharacter -> {
-            // Ensure window is correct size for game (1280x720)
-            Gdx.graphics.setWindowedMode(1280, 720);
-
             final GameScreen gameScreen = new GameScreen(null, null, selectedCharacter);
             GameApp.addScreen("Game", gameScreen);
+
+            // Switch to game screen first, then resize window
             GameApp.switchScreen("Game");
+
+            // Resize window after screen switch (post to next frame)
+            Gdx.app.postRunnable(() -> {
+                Gdx.graphics.setWindowedMode(1280, 720);
+            });
         });
     }
 
@@ -471,12 +475,16 @@ public class MenuScreen extends ScalableGameScreen {
                 return;
             }
 
-            // Ensure window is correct size for game (1280x720)
-            Gdx.graphics.setWindowedMode(1280, 720);
-
             final GameScreen gameScreen = new GameScreen(session.getSeed(), session, selectedCharacter);
             GameApp.addScreen("Game", gameScreen);
+
+            // Switch to game screen first, then resize window
             GameApp.switchScreen("Game");
+
+            // Resize window after screen switch (post to next frame)
+            Gdx.app.postRunnable(() -> {
+                Gdx.graphics.setWindowedMode(1280, 720);
+            });
         });
     }
 
