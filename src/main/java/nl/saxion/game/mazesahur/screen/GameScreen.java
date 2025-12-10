@@ -23,6 +23,7 @@ import nl.saxion.game.mazesahur.entity.Boost;
 import nl.saxion.game.mazesahur.rendering.LightingManager;
 import nl.saxion.game.mazesahur.rendering.MaterialManager;
 import nl.saxion.game.mazesahur.rendering.MazeRenderer;
+import nl.saxion.game.mazesahur.rendering.ResourceManager;
 import nl.saxion.game.mazesahur.world.Maze;
 import nl.saxion.game.mazesahur.ui.GameUI;
 import nl.saxion.gameapp.GameApp;
@@ -197,7 +198,16 @@ public class GameScreen extends ScalableGameScreen {
 
         // Initialize rendering systems (requires OpenGL context)
         lightingManager = new LightingManager();
-        materialManager = new MaterialManager();
+
+        // Use pre-loaded materials if available, otherwise create new MaterialManager
+        materialManager = ResourceManager.getInstance().getMaterialManager();
+        if (materialManager == null) {
+            System.out.println("[GameScreen] Materials not pre-loaded, creating new MaterialManager");
+            materialManager = new MaterialManager();
+        } else {
+            System.out.println("[GameScreen] Using pre-loaded materials from ResourceManager");
+        }
+
         mazeRenderer = new MazeRenderer(maze, materialManager, lightingManager);
 
         // Load photo frames after renderer is initialized
@@ -210,6 +220,22 @@ public class GameScreen extends ScalableGameScreen {
         gameUI = new GameUI();
         gameUI.initialize();
 
+        // Load audio - use pre-loaded sound if available
+        flashlightToggleSound = ResourceManager.getInstance().getSound("flashlight_toggle");
+        if (flashlightToggleSound == null) {
+            System.out.println("[GameScreen] Flashlight sound not pre-loaded, loading on-demand...");
+            flashlightToggleSound = Gdx.audio.newSound(Gdx.files.internal("audio/light-switch-81967.mp3"));
+        } else {
+            System.out.println("[GameScreen] Using pre-loaded flashlight sound");
+        }
+
+        // Load Sahur's heavy footsteps sound
+        try {
+//            sahurFootstepsSound = Gdx.audio.newSound(Gdx.files.internal("audio/heavy-walking.mp3"));
+            System.out.println("[GameScreen] Loaded Sahur footsteps sound");
+        } catch (Exception e) {
+            System.err.println("[GameScreen] Failed to load Sahur footsteps sound: " + e.getMessage());
+        }
         // Load audio
         flashlightToggleSound = Gdx.audio.newSound(Gdx.files.internal("audio/light-switch-81967.mp3"));
         whisperSound = loadOptionalSound("audio/placeholder_whisper.wav");
@@ -229,7 +255,13 @@ public class GameScreen extends ScalableGameScreen {
         camera.update();
 
         // Initialize rendering systems
-        materialManager.loadTextures();
+        // Only load textures if they weren't pre-loaded
+        if (!ResourceManager.getInstance().areMaterialsLoaded()) {
+            System.out.println("[GameScreen] Materials not pre-loaded, loading now...");
+            materialManager.loadTextures();
+        } else {
+            System.out.println("[GameScreen] Skipping material loading (already pre-loaded)");
+        }
         mazeRenderer.initialize();
 
         // Initialize enemy position
@@ -917,7 +949,9 @@ public class GameScreen extends ScalableGameScreen {
         mazeRenderer.dispose();
         materialManager.dispose();
         lightingManager.dispose();
-        if (flashlightToggleSound != null) {
+        // Only dispose flashlight sound if we loaded it ourselves (not from ResourceManager)
+        Sound preloadedSound = ResourceManager.getInstance().getSound("flashlight_toggle");
+        if (flashlightToggleSound != null && flashlightToggleSound != preloadedSound) {
             flashlightToggleSound.dispose();
         }
         if (whisperSound != null) {
