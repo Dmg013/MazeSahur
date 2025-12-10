@@ -11,6 +11,9 @@ import java.util.Optional;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.atomic.AtomicLong;
+import java.util.concurrent.ConcurrentLinkedQueue;
+import nl.saxion.game.mazesahur.event.HorrorEvent;
+import nl.saxion.game.mazesahur.event.HorrorEventType;
 import nl.saxion.game.mazesahur.model.CharacterType;
 
 /**
@@ -28,6 +31,7 @@ public class MultiplayerSession implements NetworkClientCallback {
     private volatile long seed;
     private volatile boolean joined = false;
     private volatile EnemySnapshot enemySnapshot;
+    private final ConcurrentLinkedQueue<HorrorEvent> incomingEvents = new ConcurrentLinkedQueue<>();
 
     public MultiplayerSession(final NetworkSessionConfig config) {
         this.config = config;
@@ -98,6 +102,37 @@ public class MultiplayerSession implements NetworkClientCallback {
         return enemySnapshot;
     }
 
+    /**
+     * Sends lightweight context to the server so it can pace events server-side.
+     */
+    public void sendContext(final float stressLevel, final boolean flashlightOn, final float enemyDistance) {
+        if (!joined) {
+            return;
+        }
+        final ContextMessage msg = new ContextMessage();
+        msg.type = "context";
+        msg.stress = stressLevel;
+        msg.flashlight = flashlightOn;
+        msg.enemyDistance = enemyDistance;
+        try {
+            networkClient.sendText(mapper.writeValueAsString(msg));
+        } catch (Exception e) {
+            e.printStackTrace();
+        }
+    }
+
+    /**
+     * Retrieves and clears pending events received from the server.
+     */
+    public List<HorrorEvent> drainEvents() {
+        final List<HorrorEvent> list = new ArrayList<>();
+        HorrorEvent event;
+        while ((event = incomingEvents.poll()) != null) {
+            list.add(event);
+        }
+        return list;
+    }
+
     @Override
     public void onConnected() {
         // Send join immediately
@@ -125,6 +160,9 @@ public class MultiplayerSession implements NetworkClientCallback {
                     break;
                 case "state":
                     handleState(root);
+                    break;
+                case "event":
+                    handleEvent(root);
                     break;
                 default:
                     System.out.println("[MultiplayerSession] Unknown message type: " + type);
@@ -175,6 +213,22 @@ public class MultiplayerSession implements NetworkClientCallback {
         }
     }
 
+    private void handleEvent(final JsonNode root) {
+        final HorrorEventType type = HorrorEventType.fromString(root.path("eventType").asText());
+        if (type == null) {
+            System.out.println("[MultiplayerSession] Unknown event type payload: " + root);
+            return;
+        }
+        final String id = Optional.ofNullable(root.get("id")).map(JsonNode::asText)
+            .orElse("evt-" + System.currentTimeMillis());
+        final String scope = Optional.ofNullable(root.get("scope")).map(JsonNode::asText).orElse("all");
+        final float duration = (float) root.path("duration").asDouble(3.0);
+        final float intensity = (float) root.path("intensity").asDouble(1.0);
+        final long eventSeed = root.path("seed").asLong(System.currentTimeMillis());
+
+        incomingEvents.add(new HorrorEvent(id, type, scope, duration, intensity, eventSeed, true));
+    }
+
     // Message DTOs for serialization
     private static final class JoinMessage {
         public String type;
@@ -189,5 +243,12 @@ public class MultiplayerSession implements NetworkClientCallback {
         public float moveX;
         public float moveZ;
         public float yaw;
+    }
+
+    private static final class ContextMessage {
+        public String type;
+        public float stress;
+        public boolean flashlight;
+        public float enemyDistance;
     }
 }

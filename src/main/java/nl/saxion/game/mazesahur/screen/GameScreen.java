@@ -9,6 +9,9 @@ import com.badlogic.gdx.math.Vector3;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Random;
+import nl.saxion.game.mazesahur.event.EventManager;
+import nl.saxion.game.mazesahur.event.HorrorEvent;
+import nl.saxion.game.mazesahur.event.HorrorEventType;
 import nl.saxion.game.mazesahur.model.CharacterType;
 import nl.saxion.game.mazesahur.net.MultiplayerSession;
 import nl.saxion.game.mazesahur.net.RemotePlayerState;
@@ -53,8 +56,6 @@ public class GameScreen extends ScalableGameScreen {
 
     // Audio
     private Sound flashlightToggleSound;
-    private Sound sahurFootstepsSound;
-    private long sahurFootstepsSoundId = -1;
 
     // Camera control
     private float yaw;
@@ -85,6 +86,16 @@ public class GameScreen extends ScalableGameScreen {
     private List<RemotePlayerState> remotePlayers = new ArrayList<>();
     private boolean useNetworkEnemy = false;
     private final CharacterType localCharacterType;
+    private EventManager eventManager;
+    private float stressLevel = 0f;
+    private float contextSendTimer = 0f;
+    private static final float CONTEXT_INTERVAL = 0.75f;
+    private final Vector3 eventCameraOffset = new Vector3();
+
+    // Horror audio (optional placeholders)
+    private Sound whisperSound;
+    private Sound rushSound;
+    private Sound hallucinationSound;
 
     /**
      * Creates a new game screen with default settings.
@@ -225,6 +236,11 @@ public class GameScreen extends ScalableGameScreen {
         } catch (Exception e) {
             System.err.println("[GameScreen] Failed to load Sahur footsteps sound: " + e.getMessage());
         }
+        // Load audio
+        flashlightToggleSound = Gdx.audio.newSound(Gdx.files.internal("audio/light-switch-81967.mp3"));
+        whisperSound = loadOptionalSound("audio/placeholder_whisper.wav");
+        rushSound = loadOptionalSound("audio/placeholder_rush.wav");
+        hallucinationSound = loadOptionalSound("audio/placeholder_shadow.wav");
 
         // Capture cursor for FPS controls
         Gdx.input.setCursorCatched(true);
@@ -251,6 +267,18 @@ public class GameScreen extends ScalableGameScreen {
         // Initialize enemy position
         enemy.initialize();
 
+        // Initialize horror event manager
+        eventManager = new EventManager(
+            maze,
+            player,
+            enemy,
+            lightingManager,
+            networked,
+            whisperSound,
+            rushSound,
+            hallucinationSound
+        );
+
         System.out.println("[GameScreen] Initialization complete!");
     }
 
@@ -274,6 +302,17 @@ public class GameScreen extends ScalableGameScreen {
             // Apply latest network state before local updates
             if (networked && multiplayerSession != null && multiplayerSession.isJoined()) {
                 syncNetworkState();
+            }
+
+            // Update event system and stress before game logic
+            stressLevel = computeStressLevel();
+            if (eventManager != null) {
+                if (networked) {
+                    handleIncomingNetworkEvents();
+                }
+                eventManager.update(delta, stressLevel);
+                eventCameraOffset.set(eventManager.getCameraOffset());
+                maybeSendContextToServer(delta);
             }
 
             // Update game state
@@ -301,9 +340,6 @@ public class GameScreen extends ScalableGameScreen {
 
             // Update footsteps
             mazeRenderer.updateFootsteps(delta, enemy);
-
-            // Update Sahur footsteps audio based on distance
-            updateSahurFootstepsAudio();
 
             // Handle input
             handleGameInput();
@@ -452,6 +488,57 @@ public class GameScreen extends ScalableGameScreen {
                 }
             }
         }
+    }
+
+    /**
+     * Computes a rough stress level (0..1) based on proximity, light, and energy.
+     */
+    private float computeStressLevel() {
+        float stress = 0f;
+
+        // Enemy proximity (dominant factor)
+        final float distance = player.getPosition().dst(enemy.getPosition());
+        stress += Math.max(0f, (15f - distance) / 15f) * 0.6f;
+
+        // Flashlight status
+        if (!lightingManager.isFlashlightEnabled()) {
+            stress += 0.2f;
+        }
+
+        // Low energy increases stress
+        if (player.getEnergy() < 0.4f) {
+            stress += (0.4f - player.getEnergy());
+        }
+
+        return Math.min(1f, stress);
+    }
+
+    private void handleIncomingNetworkEvents() {
+        if (multiplayerSession == null || eventManager == null) {
+            return;
+        }
+        final List<HorrorEvent> events = multiplayerSession.drainEvents();
+        for (HorrorEvent event : events) {
+            eventManager.enqueue(event);
+        }
+    }
+
+    /**
+     * Sends lightweight context to the server so it can pace events.
+     */
+    private void maybeSendContextToServer(final float delta) {
+        if (!networked || multiplayerSession == null) {
+            return;
+        }
+        contextSendTimer += delta;
+        if (contextSendTimer < CONTEXT_INTERVAL) {
+            return;
+        }
+        contextSendTimer = 0f;
+
+        final float distance = player.getPosition().dst(enemy.getPosition());
+        final boolean flashlightOn = lightingManager.isFlashlightEnabled();
+        multiplayerSession.sendContext(stressLevel, flashlightOn, distance);
     }
 
     /**
@@ -641,6 +728,20 @@ public class GameScreen extends ScalableGameScreen {
     }
 
     /**
+     * Loads a sound if the asset exists; otherwise returns null without failing.
+     */
+    private Sound loadOptionalSound(final String path) {
+        try {
+            if (Gdx.files.internal(path).exists()) {
+                return Gdx.audio.newSound(Gdx.files.internal(path));
+            }
+        } catch (Exception e) {
+            System.err.println("[GameScreen] Failed to load sound " + path + ": " + e.getMessage());
+        }
+        return null;
+    }
+
+    /**
      * Applies latest authoritative state from the multiplayer session.
      */
     private void syncNetworkState() {
@@ -707,6 +808,9 @@ public class GameScreen extends ScalableGameScreen {
         if (jumpscareActive) {
             camera.position.add(jumpscareShakeOffset);
         }
+        if (eventManager != null) {
+            camera.position.add(eventCameraOffset);
+        }
 
         // Apply FOV effect when sprinting (speed effect)
         final float targetFOV = player.isSprinting() ? GameConfig.FIELD_OF_VIEW + 10f : GameConfig.FIELD_OF_VIEW;
@@ -751,12 +855,6 @@ public class GameScreen extends ScalableGameScreen {
         isDead = true;
         jumpscareActive = true;
         jumpscareTimer = 0f;
-
-        // Stop Sahur footsteps sound
-        if (sahurFootstepsSound != null && sahurFootstepsSoundId != -1) {
-            sahurFootstepsSound.stop(sahurFootstepsSoundId);
-            sahurFootstepsSoundId = -1;
-        }
 
         System.out.println("[GameScreen] Player caught! Triggering jumpscare...");
 
@@ -834,53 +932,6 @@ public class GameScreen extends ScalableGameScreen {
         GameApp.switchScreen("DeathScreen");
     }
 
-    /**
-     * Updates Sahur's heavy footsteps audio based on distance from the player.
-     * The sound gets louder as Sahur gets closer and quieter as he moves away.
-     * Starts softly at 50m and gets progressively louder as Sahur approaches.
-     */
-    private void updateSahurFootstepsAudio() {
-        if (sahurFootstepsSound == null) {
-            return; // Sound not loaded
-        }
-
-        // Calculate distance between player and Sahur
-        final float distance = player.getPosition().dst(enemy.getPosition());
-
-        // Define distance thresholds for audio
-        final float maxHearingDistance = 50f; // Start hearing from 50 units away (very soft)
-        final float minDistance = 0f; // Closest distance (loudest)
-
-        // If Sahur is too far away, stop the sound
-        if (distance > maxHearingDistance) {
-            if (sahurFootstepsSoundId != -1) {
-                sahurFootstepsSound.stop(sahurFootstepsSoundId);
-                sahurFootstepsSoundId = -1;
-            }
-            return;
-        }
-
-        // Calculate volume based on distance (inverse distance falloff)
-        // At 50m: very quiet (volume ~0.02)
-        // At 25m: medium (volume ~0.40)
-        // At 0m: maximum (volume 0.80)
-        final float normalizedDistance = distance / maxHearingDistance; // 0.0 (close) to 1.0 (far)
-        final float volume = (1f - normalizedDistance) * 0.8f; // Max volume 80%
-
-        // Apply minimum volume threshold to ensure very quiet sounds at max distance
-        final float finalVolume = Math.max(0.02f, volume); // Minimum 2% volume at 50m
-
-        // Start or update the looping sound
-        if (sahurFootstepsSoundId == -1) {
-            // Start playing the sound in a loop
-            sahurFootstepsSoundId = sahurFootstepsSound.loop(finalVolume);
-            System.out.println("[GameScreen] Started Sahur footsteps audio (distance: " + String.format("%.1f", distance) + "m, volume: " + String.format("%.2f", finalVolume) + ")");
-        } else {
-            // Update the volume of the existing sound
-            sahurFootstepsSound.setVolume(sahurFootstepsSoundId, finalVolume);
-        }
-    }
-
     @Override
     public void resize(final int width, final int height) {
         if (camera != null) {
@@ -894,13 +945,6 @@ public class GameScreen extends ScalableGameScreen {
     @Override
     public void hide() {
         Gdx.input.setCursorCatched(false);
-
-        // Stop Sahur footsteps sound
-        if (sahurFootstepsSound != null && sahurFootstepsSoundId != -1) {
-            sahurFootstepsSound.stop(sahurFootstepsSoundId);
-            sahurFootstepsSoundId = -1;
-        }
-
         gameUI.dispose();
         mazeRenderer.dispose();
         materialManager.dispose();
@@ -910,8 +954,14 @@ public class GameScreen extends ScalableGameScreen {
         if (flashlightToggleSound != null && flashlightToggleSound != preloadedSound) {
             flashlightToggleSound.dispose();
         }
-        if (sahurFootstepsSound != null) {
-            sahurFootstepsSound.dispose();
+        if (whisperSound != null) {
+            whisperSound.dispose();
+        }
+        if (rushSound != null) {
+            rushSound.dispose();
+        }
+        if (hallucinationSound != null) {
+            hallucinationSound.dispose();
         }
     }
 

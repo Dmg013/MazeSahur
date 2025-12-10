@@ -13,11 +13,13 @@ import com.badlogic.gdx.math.Vector3;
 public class LightingManager {
     private final SpotlightShader shader;
     private boolean flashlightEnabled = true;
+    private boolean flashlightSuppressed = false;
 
     // Flashlight parameters
     private final Vector3 spotPosition = new Vector3();
     private final Vector3 spotDirection = new Vector3(0, 0, -1);
     private float baseIntensity = GameConfig.FLASHLIGHT_INTENSITY;
+    private float intensityMultiplier = 1f;
 
     // Bobbing effect
     private float bobbingTime = 0f;
@@ -43,7 +45,7 @@ public class LightingManager {
      */
     public void updateFlashlight(final Vector3 playerPosition, final Vector3 cameraDirection,
                                   final float delta, final boolean isMoving) {
-        if (!flashlightEnabled) {
+        if (!flashlightEnabled || flashlightSuppressed) {
             shader.setEnabled(false);
             return;
         }
@@ -76,7 +78,7 @@ public class LightingManager {
         spotDirection.set(bobDirection);
 
         // Calculate intensity with flickering
-        float intensity = baseIntensity;
+        float intensity = baseIntensity * intensityMultiplier;
         if (isMoving) {
             intensity += (float) Math.sin(bobbingTime * 3.7f) * INTENSITY_FLICKER_AMOUNT;
         } else {
@@ -112,10 +114,23 @@ public class LightingManager {
     }
 
     /**
+     * Suppresses the flashlight (e.g. power outage) without changing the toggle state.
+     */
+    public void setFlashlightSuppressed(final boolean suppressed) {
+        this.flashlightSuppressed = suppressed;
+    }
+
+    /**
+     * Sets a temporary intensity multiplier (e.g. dimming).
+     */
+    public void setIntensityMultiplier(final float multiplier) {
+        this.intensityMultiplier = multiplier;
+    }
+
+    /**
      * Disposes shader resources.
      */
     public void dispose() {
         shader.dispose();
     }
 }
-
