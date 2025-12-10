@@ -21,6 +21,18 @@ application {
     mainClass = 'nl.saxion.game.mazesahur.server.ServerMain'
 }
 
+jar {
+    manifest {
+        attributes 'Main-Class': application.mainClass
+    }
+
+    // Package dependencies into the JAR so it can be started with `java -jar`.
+    from {
+        configurations.runtimeClasspath.collect { it.isDirectory() ? it : zipTree(it) }
+    }
+    duplicatesStrategy = DuplicatesStrategy.EXCLUDE
+}
+
 java {
     toolchain {
         languageVersion = JavaLanguageVersion.of(21)

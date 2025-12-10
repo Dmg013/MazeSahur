@@ -5,11 +5,11 @@ Minimal WebSocket server for MazeSahur. It is server-authoritative for player mo
 ## Build locally
 
 ```bash
-# Build distribution with scripts + libs
-./gradlew :server:installDist
+# Build runnable fat JAR (packages dependencies)
+./gradlew :server:jar
 
 # Run locally (PORT defaults to 8080)
-PORT=8080 ./server/build/install/server/bin/server
+PORT=8080 java -jar server/build/libs/server-0.0.1-SNAPSHOT.jar
 ```
 
 ## Protocol (JSON over WebSocket `/ws`)
@@ -21,7 +21,7 @@ PORT=8080 ./server/build/install/server/bin/server
 
 ## Docker
 
-Prereq: run `./gradlew :server:installDist` so `build/install/server` exists.
+Prereq: run `./gradlew :server:jar` so `server/build/libs/server-0.0.1-SNAPSHOT.jar` exists.
 
 Build image:
 ```bash
