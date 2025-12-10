@@ -231,7 +231,7 @@ public class GameScreen extends ScalableGameScreen {
 
         // Load Sahur's heavy footsteps sound
         try {
-            sahurFootstepsSound = Gdx.audio.newSound(Gdx.files.internal("audio/heavy-walking.mp3"));
+//            sahurFootstepsSound = Gdx.audio.newSound(Gdx.files.internal("audio/heavy-walking.mp3"));
             System.out.println("[GameScreen] Loaded Sahur footsteps sound");
         } catch (Exception e) {
             System.err.println("[GameScreen] Failed to load Sahur footsteps sound: " + e.getMessage());
