@@ -358,7 +358,7 @@ public class MazeRenderer {
      */
     /**
      * Loads all available character models for remote players.
-     * Supports DEFAULT, BIG_BUSINESS, and SOUNDCLOUD character types.
+     * Supports DEFAULT, BIG_BUSINESS, SOUNDCLOUD, LOCKDOWN, and MAXIMILIAN character types.
      */
     private void loadAllCharacterModels() {
         System.out.println("[MazeRenderer] Loading all character models...");
@@ -371,6 +371,12 @@ public class MazeRenderer {
 
         // Load SOUNDCLOUD character
         loadCharacterModel("SOUNDCLOUD", "models/player/soundcloud", "Idle", "Walking");
+
+        // Load LOCKDOWN character
+        loadCharacterModel("LOCKDOWN", "models/player/lockdown", "Idle", "Walking");
+
+        // Load MAXIMILIAN character
+        loadCharacterModel("MAXIMILIAN", "models/player/maximilian", "Idle", "Walking");
 
         System.out.println("[MazeRenderer] All character models loaded (" + characterModels.size() + " types)");
     }
