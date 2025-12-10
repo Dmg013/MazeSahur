@@ -10,11 +10,13 @@ import com.badlogic.gdx.graphics.glutils.ShapeRenderer;
 import com.badlogic.gdx.utils.Align;
 import nl.saxion.gameapp.GameApp;
 import nl.saxion.gameapp.screens.ScalableGameScreen;
+import nl.saxion.game.mazesahur.rendering.ResourceManager;
 
 
 /**
  * Splash screen with loading bar and progress text.
  * Shows centered window with game logo and loading progress.
+ * Pre-loads all game assets during the loading phase.
  *
  * @author Olivier, Luuk, Russell, Tim
  * @version 1.0
@@ -34,16 +36,17 @@ public class SplashScreen extends ScalableGameScreen {
     // Loading stages
     private static final String[] LOADING_STAGES = {
         "Initializing...",
-        "Loading resources...",
-        "Preparing menu...",
-        "Finalizing..."
+        "Loading materials...",
+        "Loading characters...",
+        "Loading audio..."
     };
 
     private volatile int currentStage = 0;
     private float stageTimer = 0.0f;
-    private static final float MINIMUM_DISPLAY_TIME = 2.0f; // Minimum 2 seconds display
+    private static final float MINIMUM_DISPLAY_TIME = 1.5f; // Minimum 1.5 seconds display
     private float elapsedTime = 0.0f;
-    private volatile boolean menuLoaded = false;
+    private volatile boolean assetsLoaded = false;
+    private boolean loadingStarted = false;
     private boolean readyToTransition = false;
     private boolean transitionStarted = false;
 
@@ -107,32 +110,58 @@ public class SplashScreen extends ScalableGameScreen {
         elapsedTime += delta;
         stageTimer += delta;
 
-        // Progress through loading stages
-        if (!menuLoaded) {
-            // Auto-progress through stages
-            if (currentStage == 0) {
-                System.out.println("[SplashScreen] Stage 0: Initializing...");
-                currentStage = 1;
-                stageTimer = 0.0f;
-            } else if (currentStage == 1 && stageTimer > 0.3f) {
-                System.out.println("[SplashScreen] Stage 1: Loading resources...");
+        // Load assets progressively on the render thread (not background thread!)
+        // OpenGL operations must happen on the rendering thread
+        if (!loadingStarted && currentStage == 0) {
+            System.out.println("[SplashScreen] Stage 0: Initializing...");
+            loadingStarted = true;
+            currentStage = 1;
+            stageTimer = 0.0f;
+        }
+
+        // Load each asset type one per frame to keep UI responsive
+        if (!assetsLoaded) {
+            if (currentStage == 1 && stageTimer > 0.1f) {
+                // Load materials on render thread
+                System.out.println("[SplashScreen] Stage 1: Loading materials...");
+                try {
+                    ResourceManager.getInstance().preloadMaterials();
+                } catch (Exception e) {
+                    System.err.println("[SplashScreen] Error loading materials: " + e.getMessage());
+                    e.printStackTrace();
+                }
                 currentStage = 2;
                 stageTimer = 0.0f;
-            } else if (currentStage == 2 && stageTimer > 0.3f) {
-                System.out.println("[SplashScreen] Stage 2: Preparing menu...");
+            } else if (currentStage == 2 && stageTimer > 0.1f) {
+                // Load character models on render thread
+                System.out.println("[SplashScreen] Stage 2: Loading character models...");
+                try {
+                    ResourceManager.getInstance().preloadCharacterModels();
+                } catch (Exception e) {
+                    System.err.println("[SplashScreen] Error loading character models: " + e.getMessage());
+                    e.printStackTrace();
+                }
                 currentStage = 3;
                 stageTimer = 0.0f;
-            } else if (currentStage == 3 && stageTimer > 0.3f) {
-                System.out.println("[SplashScreen] Stage 3: Finalizing");
-                menuLoaded = true;
+            } else if (currentStage == 3 && stageTimer > 0.1f) {
+                // Load audio on render thread
+                System.out.println("[SplashScreen] Stage 3: Loading audio...");
+                try {
+                    ResourceManager.getInstance().preloadAudio();
+                } catch (Exception e) {
+                    System.err.println("[SplashScreen] Error loading audio: " + e.getMessage());
+                    e.printStackTrace();
+                }
+                assetsLoaded = true;
+                System.out.println("[SplashScreen] All assets loaded!");
             }
         }
 
         // Calculate progress based on current stage
         float loadingProgress = (float) (currentStage + 1) / LOADING_STAGES.length;
 
-        // Check if we can transition (minimum display time + menu loaded)
-        if (elapsedTime >= MINIMUM_DISPLAY_TIME && menuLoaded) {
+        // Check if we can transition (minimum display time + assets loaded)
+        if (elapsedTime >= MINIMUM_DISPLAY_TIME && assetsLoaded) {
             readyToTransition = true;
         }
 

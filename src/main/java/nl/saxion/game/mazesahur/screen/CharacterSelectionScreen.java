@@ -38,6 +38,7 @@ import nl.saxion.game.mazesahur.model.CharacterType;
 import nl.saxion.game.mazesahur.config.GameConfig;
 import nl.saxion.gameapp.GameApp;
 import java.util.function.Consumer;
+import nl.saxion.game.mazesahur.rendering.ResourceManager;
 
 /**
  * Modern character selection screen where players choose their skin/model.
@@ -109,6 +110,12 @@ public class CharacterSelectionScreen extends ScalableGameScreen {
     @Override
     public void show() {
         System.out.println("[CharacterSelectionScreen] Showing modern character selection");
+
+        // Note: Assets should already be pre-loaded from SplashScreen
+        if (!ResourceManager.getInstance().areAllAssetsLoaded()) {
+            System.out.println("[CharacterSelectionScreen] WARNING: Assets not pre-loaded, loading now...");
+            ResourceManager.getInstance().preloadAll();
+        }
 
         batch = new SpriteBatch();
         shapeRenderer = new ShapeRenderer();
@@ -353,6 +360,14 @@ public class CharacterSelectionScreen extends ScalableGameScreen {
         titleFont.draw(batch, layout, (screenWidth / 2f - layout.width) / 2f, screenHeight - 50);
         titleFont.getData().setScale(3.5f); // Reset scale
 
+        // Show assets ready indicator
+        if (ResourceManager.getInstance().areAllAssetsLoaded()) {
+            smallFont.setColor(new Color(0.2f, 0.8f, 0.2f, 0.4f));
+            final String readyText = "✓ Assets loaded";
+            layout.setText(smallFont, readyText);
+            smallFont.draw(batch, layout, 20, screenHeight - 20);
+        }
+
         batch.end();
     }
 
@@ -447,6 +462,7 @@ public class CharacterSelectionScreen extends ScalableGameScreen {
     }
 
     private void ensurePreviewModel(final CharacterType type) {
+        // Check if we already have this model in local cache
         if (previewModels.containsKey(type)) {
             if (lastPreviewType != type) {
                 final AnimationController controller = previewControllers.get(type);
@@ -458,6 +474,37 @@ public class CharacterSelectionScreen extends ScalableGameScreen {
             return;
         }
 
+        // Try to use pre-loaded model from ResourceManager
+        final Model preloadedModel = ResourceManager.getInstance().getCharacterModel(type);
+        if (preloadedModel != null) {
+            // Use pre-loaded model, but create our own instance
+            System.out.println("[CharacterSelectionScreen] Using pre-loaded model for " + type.getDisplayName());
+
+            final ModelInstance instance = new ModelInstance(preloadedModel);
+            AnimationController controller = null;
+            if (preloadedModel.animations.size > 0) {
+                controller = new AnimationController(instance);
+                controller.setAnimation("walking", -1);
+            }
+
+            // Get pre-calculated scale and offset
+            final float scale = ResourceManager.getInstance().getCharacterScale(type);
+            final float footOffset = ResourceManager.getInstance().getCharacterFootOffset(type);
+
+            // Store in local cache (we don't own the model, so we won't dispose it)
+            previewModels.put(type, preloadedModel);
+            previewInstances.put(type, instance);
+            if (controller != null) {
+                previewControllers.put(type, controller);
+            }
+            previewScales.put(type, scale);
+            previewFootOffsets.put(type, footOffset);
+            lastPreviewType = type;
+            return;
+        }
+
+        // Fallback: Load model on-demand if not pre-loaded
+        System.out.println("[CharacterSelectionScreen] WARNING: Loading model on-demand for " + type.getDisplayName());
         final String basePath = type.getModelPath();
         final String walkingFile = type == CharacterType.DEFAULT ? "WalkingNew" : "Walking";
         final String modelPath = basePath + "/" + walkingFile + ".g3dj";
@@ -657,8 +704,15 @@ public class CharacterSelectionScreen extends ScalableGameScreen {
         if (previewBatch != null) {
             previewBatch.dispose();
         }
-        for (Model model : previewModels.values()) {
-            model.dispose();
+        // NOTE: Don't dispose previewModels if they came from ResourceManager
+        // Only dispose models we loaded ourselves (check if they're different from ResourceManager)
+        for (Map.Entry<CharacterType, Model> entry : previewModels.entrySet()) {
+            Model model = entry.getValue();
+            Model preloadedModel = ResourceManager.getInstance().getCharacterModel(entry.getKey());
+            // Only dispose if it's not the pre-loaded one (we loaded it ourselves)
+            if (model != preloadedModel && model != null) {
+                model.dispose();
+            }
         }
         previewModels.clear();
         if (previewFallbackTexture != null) {
