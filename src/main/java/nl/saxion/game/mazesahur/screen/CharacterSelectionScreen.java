@@ -601,10 +601,22 @@ public class CharacterSelectionScreen extends ScalableGameScreen {
     private FileHandle pickTexture(final FileHandle baseDir, final boolean hair, final String key) {
         final String suffix = key.substring(0, 1).toUpperCase() + key.substring(1).toLowerCase();
 
-        // Try both Ch33 (Big Business) and Ch06 (Soundcloud) naming patterns
+        // Try Ch33 (Big Business), Ch06 (Soundcloud), Ch11 (Lockdown), Ch20 (Maximilian), and Ch32 (Default) naming patterns
         final String[] primaries = hair
-            ? new String[]{"Ch33_1002_" + suffix + ".png", "Ch06_1002_" + suffix + ".png"}
-            : new String[]{"Ch33_1001_" + suffix + ".png", "Ch06_1001_" + suffix + ".png"};
+            ? new String[]{
+                "Ch33_1002_" + suffix + ".png",
+                "Ch06_1002_" + suffix + ".png",
+                "Ch11_1002_" + suffix + ".png",
+                "Ch20_1002_" + suffix + ".png",
+                "Ch32_1002_" + suffix + ".png"
+            }
+            : new String[]{
+                "Ch33_1001_" + suffix + ".png",
+                "Ch06_1001_" + suffix + ".png",
+                "Ch11_1001_" + suffix + ".png",
+                "Ch20_1001_" + suffix + ".png",
+                "Ch32_1001_" + suffix + ".png"
+            };
 
         for (String primary : primaries) {
             FileHandle handle = baseDir.child(primary);

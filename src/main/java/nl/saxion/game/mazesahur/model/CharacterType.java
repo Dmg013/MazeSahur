@@ -10,7 +10,9 @@ package nl.saxion.game.mazesahur.model;
 public enum CharacterType {
     DEFAULT("Default", "models/player/default"),
     BIG_BUSINESS("Big Business", "models/player/big_business"),
-    SOUNDCLOUD("Soundcloud", "models/player/soundcloud");
+    SOUNDCLOUD("Soundcloud", "models/player/soundcloud"),
+    LOCKDOWN("Lockdown", "models/player/lockdown"),
+    MAXIMILIAN("Maximilian", "models/player/maximilian");
 
     private final String displayName;
     private final String modelPath;
