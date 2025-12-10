@@ -9,6 +9,9 @@ import com.badlogic.gdx.math.Vector3;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Random;
+import nl.saxion.game.mazesahur.event.EventManager;
+import nl.saxion.game.mazesahur.event.HorrorEvent;
+import nl.saxion.game.mazesahur.event.HorrorEventType;
 import nl.saxion.game.mazesahur.model.CharacterType;
 import nl.saxion.game.mazesahur.net.MultiplayerSession;
 import nl.saxion.game.mazesahur.net.RemotePlayerState;
@@ -82,6 +85,16 @@ public class GameScreen extends ScalableGameScreen {
     private List<RemotePlayerState> remotePlayers = new ArrayList<>();
     private boolean useNetworkEnemy = false;
     private final CharacterType localCharacterType;
+    private EventManager eventManager;
+    private float stressLevel = 0f;
+    private float contextSendTimer = 0f;
+    private static final float CONTEXT_INTERVAL = 0.75f;
+    private final Vector3 eventCameraOffset = new Vector3();
+
+    // Horror audio (optional placeholders)
+    private Sound whisperSound;
+    private Sound rushSound;
+    private Sound hallucinationSound;
 
     /**
      * Creates a new game screen with default settings.
@@ -199,6 +212,9 @@ public class GameScreen extends ScalableGameScreen {
 
         // Load audio
         flashlightToggleSound = Gdx.audio.newSound(Gdx.files.internal("audio/light-switch-81967.mp3"));
+        whisperSound = loadOptionalSound("audio/placeholder_whisper.wav");
+        rushSound = loadOptionalSound("audio/placeholder_rush.wav");
+        hallucinationSound = loadOptionalSound("audio/placeholder_shadow.wav");
 
         // Capture cursor for FPS controls
         Gdx.input.setCursorCatched(true);
@@ -218,6 +234,18 @@ public class GameScreen extends ScalableGameScreen {
 
         // Initialize enemy position
         enemy.initialize();
+
+        // Initialize horror event manager
+        eventManager = new EventManager(
+            maze,
+            player,
+            enemy,
+            lightingManager,
+            networked,
+            whisperSound,
+            rushSound,
+            hallucinationSound
+        );
 
         System.out.println("[GameScreen] Initialization complete!");
     }
@@ -242,6 +270,17 @@ public class GameScreen extends ScalableGameScreen {
             // Apply latest network state before local updates
             if (networked && multiplayerSession != null && multiplayerSession.isJoined()) {
                 syncNetworkState();
+            }
+
+            // Update event system and stress before game logic
+            stressLevel = computeStressLevel();
+            if (eventManager != null) {
+                if (networked) {
+                    handleIncomingNetworkEvents();
+                }
+                eventManager.update(delta, stressLevel);
+                eventCameraOffset.set(eventManager.getCameraOffset());
+                maybeSendContextToServer(delta);
             }
 
             // Update game state
@@ -417,6 +456,57 @@ public class GameScreen extends ScalableGameScreen {
                 }
             }
         }
+    }
+
+    /**
+     * Computes a rough stress level (0..1) based on proximity, light, and energy.
+     */
+    private float computeStressLevel() {
+        float stress = 0f;
+
+        // Enemy proximity (dominant factor)
+        final float distance = player.getPosition().dst(enemy.getPosition());
+        stress += Math.max(0f, (15f - distance) / 15f) * 0.6f;
+
+        // Flashlight status
+        if (!lightingManager.isFlashlightEnabled()) {
+            stress += 0.2f;
+        }
+
+        // Low energy increases stress
+        if (player.getEnergy() < 0.4f) {
+            stress += (0.4f - player.getEnergy());
+        }
+
+        return Math.min(1f, stress);
+    }
+
+    private void handleIncomingNetworkEvents() {
+        if (multiplayerSession == null || eventManager == null) {
+            return;
+        }
+        final List<HorrorEvent> events = multiplayerSession.drainEvents();
+        for (HorrorEvent event : events) {
+            eventManager.enqueue(event);
+        }
+    }
+
+    /**
+     * Sends lightweight context to the server so it can pace events.
+     */
+    private void maybeSendContextToServer(final float delta) {
+        if (!networked || multiplayerSession == null) {
+            return;
+        }
+        contextSendTimer += delta;
+        if (contextSendTimer < CONTEXT_INTERVAL) {
+            return;
+        }
+        contextSendTimer = 0f;
+
+        final float distance = player.getPosition().dst(enemy.getPosition());
+        final boolean flashlightOn = lightingManager.isFlashlightEnabled();
+        multiplayerSession.sendContext(stressLevel, flashlightOn, distance);
     }
 
     /**
@@ -606,6 +696,20 @@ public class GameScreen extends ScalableGameScreen {
     }
 
     /**
+     * Loads a sound if the asset exists; otherwise returns null without failing.
+     */
+    private Sound loadOptionalSound(final String path) {
+        try {
+            if (Gdx.files.internal(path).exists()) {
+                return Gdx.audio.newSound(Gdx.files.internal(path));
+            }
+        } catch (Exception e) {
+            System.err.println("[GameScreen] Failed to load sound " + path + ": " + e.getMessage());
+        }
+        return null;
+    }
+
+    /**
      * Applies latest authoritative state from the multiplayer session.
      */
     private void syncNetworkState() {
@@ -671,6 +775,9 @@ public class GameScreen extends ScalableGameScreen {
         // Apply jumpscare screen shake if active
         if (jumpscareActive) {
             camera.position.add(jumpscareShakeOffset);
+        }
+        if (eventManager != null) {
+            camera.position.add(eventCameraOffset);
         }
 
         // Apply FOV effect when sprinting (speed effect)
@@ -812,6 +919,15 @@ public class GameScreen extends ScalableGameScreen {
         lightingManager.dispose();
         if (flashlightToggleSound != null) {
             flashlightToggleSound.dispose();
+        }
+        if (whisperSound != null) {
+            whisperSound.dispose();
+        }
+        if (rushSound != null) {
+            rushSound.dispose();
+        }
+        if (hallucinationSound != null) {
+            hallucinationSound.dispose();
         }
     }
 
