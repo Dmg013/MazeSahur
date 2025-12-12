@@ -152,6 +152,12 @@ public class MultiplayerSession implements NetworkClientCallback {
     @Override
     public void onMessage(final String message) {
         try {
+            // Validate message is not empty
+            if (message == null || message.trim().isEmpty()) {
+                System.err.println("[MultiplayerSession] Received empty message, ignoring");
+                return;
+            }
+
             final JsonNode root = mapper.readTree(message);
             final String type = Optional.ofNullable(root.get("type")).map(JsonNode::asText).orElse("");
             switch (type) {
@@ -167,7 +173,12 @@ public class MultiplayerSession implements NetworkClientCallback {
                 default:
                     System.out.println("[MultiplayerSession] Unknown message type: " + type);
             }
+        } catch (com.fasterxml.jackson.core.JsonParseException e) {
+            System.err.println("[MultiplayerSession] JSON parse error (possibly fragmented message): " + e.getMessage());
+            System.err.println("[MultiplayerSession] Message preview: " +
+                (message.length() > 100 ? message.substring(0, 100) + "..." : message));
         } catch (Exception e) {
+            System.err.println("[MultiplayerSession] Error processing message: " + e.getMessage());
             e.printStackTrace();
         }
     }

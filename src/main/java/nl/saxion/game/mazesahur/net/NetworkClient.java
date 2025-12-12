@@ -12,8 +12,8 @@ import java.util.concurrent.CompletionStage;
 
 /**
  * Minimal WebSocket client scaffold for multiplayer.
- * Currently only connects and forwards raw text messages to a callback.
- * The actual protocol (join/input/state) can be layered on top of this class.
+ * Handles message fragmentation by buffering partial messages until complete.
+ * The actual protocol (join/input/state) is layered on top of this class.
  */
 public class NetworkClient implements Listener {
 
@@ -23,6 +23,7 @@ public class NetworkClient implements Listener {
     private final NetworkClientCallback callback;
     private final HttpClient httpClient;
     private WebSocket webSocket;
+    private final StringBuilder messageBuffer = new StringBuilder();
 
     public NetworkClient(final URI serverUri,
                          final String roomId,
@@ -86,7 +87,22 @@ public class NetworkClient implements Listener {
     public CompletionStage<?> onText(final WebSocket webSocket,
                                      final CharSequence data,
                                      final boolean last) {
-        callback.onMessage(data.toString());
+        // Append fragment to buffer
+        messageBuffer.append(data);
+
+        // Only process complete messages (when last == true)
+        if (last) {
+            try {
+                callback.onMessage(messageBuffer.toString());
+            } catch (Exception e) {
+                System.err.println("[NetworkClient] Error processing message: " + e.getMessage());
+                e.printStackTrace();
+            } finally {
+                // Clear buffer for next message
+                messageBuffer.setLength(0);
+            }
+        }
+
         webSocket.request(1);
         return null;
     }
