@@ -197,10 +197,10 @@ public class CharacterSelectionScreen extends ScalableGameScreen {
         // Handle input
         handleInput();
 
-        // Render modern UI first (while viewport is correctly set)
+        // Render modern UI first
         renderModernUI();
 
-        // Render 3D preview on left side (changes viewport temporarily)
+        // Render 3D preview on top on left side
         renderPreview(delta);
     }
 
@@ -377,12 +377,12 @@ public class CharacterSelectionScreen extends ScalableGameScreen {
         previewEnvironment.set(new ColorAttribute(ColorAttribute.AmbientLight, 0.6f, 0.6f, 0.6f, 1f));
         previewEnvironment.add(new DirectionalLight().set(1f, 1f, 1f, -1f, -0.8f, -0.2f));
 
-        // Use virtual viewport dimensions for camera (left half)
-        previewCamera = new PerspectiveCamera(50f, VIEWPORT_WIDTH / 2f, VIEWPORT_HEIGHT);
-        previewCamera.position.set(0f, 1.3f, 3.2f);
-        previewCamera.lookAt(0f, 1.0f, 0f);
-        previewCamera.near = 0.05f;
-        previewCamera.far = 20f;
+        // Camera setup for 3x enlarged model
+        previewCamera = new PerspectiveCamera(70f, Gdx.graphics.getWidth(), Gdx.graphics.getHeight());
+        previewCamera.position.set(0f, 4.2f, 8.4f);
+        previewCamera.lookAt(0f, 3.9f, 0f);
+        previewCamera.near = 0.01f;
+        previewCamera.far = 100f;
         previewCamera.update();
     }
 
@@ -393,13 +393,19 @@ public class CharacterSelectionScreen extends ScalableGameScreen {
 
         final CharacterType selected = characters[selectedIndex];
 
-        // Set viewport for left half of virtual viewport
-        final int previewWidth = (int) (viewportWidth / 2f);
-        final int previewHeight = (int) viewportHeight;
-        Gdx.gl.glViewport((int) viewportX, (int) viewportY, previewWidth, previewHeight);
+        // Use full window viewport
+        final int previewWidth = Gdx.graphics.getWidth();
+        final int previewHeight = Gdx.graphics.getHeight();
 
-        previewCamera.viewportWidth = VIEWPORT_WIDTH / 2f;
-        previewCamera.viewportHeight = VIEWPORT_HEIGHT;
+        // Set GL viewport to full window
+        Gdx.gl.glViewport(0, 0, previewWidth, previewHeight);
+
+        // Clear depth buffer
+        Gdx.gl.glClear(GL20.GL_DEPTH_BUFFER_BIT);
+
+        // Update camera viewport dimensions
+        previewCamera.viewportWidth = previewWidth;
+        previewCamera.viewportHeight = previewHeight;
         previewCamera.update();
 
         // Load model if needed
@@ -410,12 +416,15 @@ public class CharacterSelectionScreen extends ScalableGameScreen {
         final float modelScale = previewScales.getOrDefault(selected, 1f);
         final float footOffset = previewFootOffsets.getOrDefault(selected, 0f);
 
+        // Apply 3x scale to everything proportionally
+        final float enlargedScale = modelScale * 3f;
+
         // Rotate and position
         previewRotation += delta * 30f;
         instance.transform.idt();
-        instance.transform.translate(0f, footOffset * modelScale, 0f);
+        instance.transform.translate(-4.5f, footOffset * enlargedScale, 0f);
         instance.transform.rotate(Vector3.Y, previewRotation);
-        instance.transform.scale(modelScale, modelScale, modelScale);
+        instance.transform.scale(enlargedScale, enlargedScale, enlargedScale);
         instance.calculateTransforms();
 
         if (controller != null) {
@@ -429,7 +438,7 @@ public class CharacterSelectionScreen extends ScalableGameScreen {
         previewBatch.end();
         Gdx.gl.glDisable(GL20.GL_DEPTH_TEST);
 
-        // Restore full viewport for UI rendering
+        // Restore viewport for UI
         Gdx.gl.glViewport((int) viewportX, (int) viewportY, (int) viewportWidth, (int) viewportHeight);
     }
 
