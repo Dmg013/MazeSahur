@@ -16,6 +16,7 @@ import java.util.function.Consumer;
 import com.badlogic.gdx.Input;
 import com.badlogic.gdx.InputAdapter;
 import nl.saxion.game.mazesahur.model.CharacterType;
+import nl.saxion.game.mazesahur.model.CurrencyManager;
 import nl.saxion.game.mazesahur.net.MultiplayerSession;
 import nl.saxion.game.mazesahur.net.NetworkDefaults;
 import nl.saxion.game.mazesahur.net.NetworkSessionConfig;
@@ -51,8 +52,12 @@ public class MenuScreen extends ScalableGameScreen {
 
     // Buttons (using Rectangle for hit detection)
     private Rectangle playButton;
+    private Rectangle lootCratesButton;
     private Rectangle settingsButton;
     private Rectangle multiplayerButton;
+
+    // Currency manager
+    private CurrencyManager currencyManager;
 
     // Animation and timing
     private float animationTime = 0f;
@@ -157,6 +162,9 @@ public class MenuScreen extends ScalableGameScreen {
         subtitleFont = new BitmapFont();
         subtitleFont.setColor(SUBTITLE_COLOR);
 
+        // Initialize currency manager
+        currencyManager = new CurrencyManager();
+
         // Initialize responsive layout
         calculateResponsiveLayout();
 
@@ -192,13 +200,15 @@ public class MenuScreen extends ScalableGameScreen {
 
         if (playButton == null) {
             playButton = new Rectangle();
+            lootCratesButton = new Rectangle();
             settingsButton = new Rectangle();
             multiplayerButton = new Rectangle();
         }
 
         playButton.set(centerX, startY, buttonWidth, buttonHeight);
-        settingsButton.set(centerX, startY - buttonHeight - buttonSpacing, buttonWidth, buttonHeight);
-        multiplayerButton.set(centerX, startY - 2 * (buttonHeight + buttonSpacing), buttonWidth, buttonHeight);
+        lootCratesButton.set(centerX, startY - buttonHeight - buttonSpacing, buttonWidth, buttonHeight);
+        settingsButton.set(centerX, startY - 2 * (buttonHeight + buttonSpacing), buttonWidth, buttonHeight);
+        multiplayerButton.set(centerX, startY - 3 * (buttonHeight + buttonSpacing), buttonWidth, buttonHeight);
     }
 
     @Override
@@ -231,6 +241,7 @@ public class MenuScreen extends ScalableGameScreen {
 
         // Check hover states
         boolean playHovered = !showMultiplayerForm && playButton.contains(mouseX, mouseY);
+        boolean lootCratesHovered = !showMultiplayerForm && lootCratesButton.contains(mouseX, mouseY);
         boolean settingsHovered = !showMultiplayerForm && settingsButton.contains(mouseX, mouseY);
         boolean multiplayerHovered = !showMultiplayerForm && multiplayerButton.contains(mouseX, mouseY);
 
@@ -238,6 +249,8 @@ public class MenuScreen extends ScalableGameScreen {
         if (!showMultiplayerForm && Gdx.input.justTouched()) {
             if (playHovered) {
                 onPlayClicked();
+            } else if (lootCratesHovered) {
+                onLootCratesClicked();
             } else if (settingsHovered) {
                 onSettingsClicked();
             } else if (multiplayerHovered) {
@@ -253,8 +266,10 @@ public class MenuScreen extends ScalableGameScreen {
         // Draw buttons with shadows and animations
         float playScale = animationsComplete ? (playHovered ? 1.05f : 1.0f) :
                           Interpolation.elasticOut.apply(0f, 1f, Math.min(1f, animationTime * 2f));
+        float lootCratesScale = animationsComplete ? (lootCratesHovered ? 1.05f : 1.0f) :
+                                Interpolation.elasticOut.apply(0f, 1f, Math.min(1f, (animationTime - 0.1f) * 2f));
         float settingsScale = animationsComplete ? (settingsHovered ? 1.05f : 1.0f) :
-                              Interpolation.elasticOut.apply(0f, 1f, Math.min(1f, (animationTime - 0.1f) * 2f));
+                              Interpolation.elasticOut.apply(0f, 1f, Math.min(1f, (animationTime - 0.15f) * 2f));
         float multiplayerScale = animationsComplete ? (multiplayerHovered ? 1.05f : 1.0f) :
                                  Interpolation.elasticOut.apply(0f, 1f, Math.min(1f, (animationTime - 0.2f) * 2f));
 
@@ -262,6 +277,9 @@ public class MenuScreen extends ScalableGameScreen {
 
         // Draw Play button
         drawButtonWithShadow(playButton, playHovered, playScale);
+
+        // Draw Loot Crates button
+        drawButtonWithShadow(lootCratesButton, lootCratesHovered, lootCratesScale);
 
         // Draw Settings button
         drawButtonWithShadow(settingsButton, settingsHovered, settingsScale);
@@ -276,6 +294,7 @@ public class MenuScreen extends ScalableGameScreen {
         Gdx.gl.glLineWidth(BUTTON_BORDER_WIDTH);
 
         drawButtonBorder(playButton, playHovered, playScale);
+        drawButtonBorder(lootCratesButton, lootCratesHovered, lootCratesScale);
         drawButtonBorder(settingsButton, settingsHovered, settingsScale);
         drawButtonBorder(multiplayerButton, multiplayerHovered, multiplayerScale);
 
@@ -313,6 +332,7 @@ public class MenuScreen extends ScalableGameScreen {
 
         // Draw button text with scaling
         drawButtonText("PLAY", playButton, playScale);
+        drawButtonText("LOOT CRATES", lootCratesButton, lootCratesScale);
         drawButtonText("SETTINGS", settingsButton, settingsScale);
         drawButtonText("MULTIPLAYER", multiplayerButton, multiplayerScale);
 
@@ -444,6 +464,16 @@ public class MenuScreen extends ScalableGameScreen {
     private void onSettingsClicked() {
         System.out.println("[MenuScreen] Settings button clicked (not yet implemented)");
         // TODO: Implement settings menu
+    }
+
+    /**
+     * Called when the Loot Crates button is clicked.
+     */
+    private void onLootCratesClicked() {
+        System.out.println("[MenuScreen] Loot Crates button clicked");
+        LootCratesScreen lootScreen = new LootCratesScreen();
+        GameApp.addScreen("LootCrates", lootScreen);
+        GameApp.switchScreen("LootCrates");
     }
 
     /**

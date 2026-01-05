@@ -41,6 +41,28 @@ public enum CharacterType {
     }
 
     /**
+     * Gets the rarity tier for this character.
+     *
+     * @return Rarity tier
+     */
+    public Rarity getRarity() {
+        switch (this) {
+            case DEFAULT:
+                return Rarity.COMMON;
+            case BIG_BUSINESS:
+                return Rarity.RARE;
+            case SOUNDCLOUD:
+                return Rarity.RARE;
+            case LOCKDOWN:
+                return Rarity.EPIC;
+            case MAXIMILIAN:
+                return Rarity.LEGENDARY;
+            default:
+                return Rarity.COMMON;
+        }
+    }
+
+    /**
      * Gets character type from string name (case-insensitive).
      * Returns DEFAULT if not found.
      *

@@ -35,6 +35,7 @@ import com.badlogic.gdx.graphics.g3d.attributes.TextureAttribute;
 import java.util.HashMap;
 import java.util.Map;
 import nl.saxion.game.mazesahur.model.CharacterType;
+import nl.saxion.game.mazesahur.model.UnlockManager;
 import nl.saxion.game.mazesahur.config.GameConfig;
 import nl.saxion.gameapp.GameApp;
 import java.util.function.Consumer;
@@ -91,6 +92,9 @@ public class CharacterSelectionScreen extends ScalableGameScreen {
     // Callback for when character is selected
     private final Consumer<CharacterType> onCharacterSelected;
 
+    // Unlock manager
+    private UnlockManager unlockManager;
+
     // Preview rendering resources
     private ModelBatch previewBatch;
     private Environment previewEnvironment;
@@ -116,6 +120,9 @@ public class CharacterSelectionScreen extends ScalableGameScreen {
             System.out.println("[CharacterSelectionScreen] WARNING: Assets not pre-loaded, loading now...");
             ResourceManager.getInstance().preloadAll();
         }
+
+        // Initialize unlock manager
+        unlockManager = new UnlockManager();
 
         batch = new SpriteBatch();
         shapeRenderer = new ShapeRenderer();
@@ -213,9 +220,13 @@ public class CharacterSelectionScreen extends ScalableGameScreen {
         // Check character button hover/click
         for (int i = 0; i < characterButtons.length; i++) {
             if (characterButtons[i].contains(mouseX, mouseY)) {
-                selectedIndex = i;
-                if (Gdx.input.justTouched()) {
-                    selectCharacter();
+                final CharacterType character = characters[i];
+                final boolean isLocked = !unlockManager.isUnlocked(character);
+                if (!isLocked) {
+                    selectedIndex = i;
+                    if (Gdx.input.justTouched()) {
+                        selectCharacter();
+                    }
                 }
             }
         }
@@ -232,10 +243,24 @@ public class CharacterSelectionScreen extends ScalableGameScreen {
 
         if (!keyPressed) {
             if (upPressed) {
-                selectedIndex = (selectedIndex - 1 + characters.length) % characters.length;
+                // Skip locked characters
+                int newIndex = (selectedIndex - 1 + characters.length) % characters.length;
+                while (!unlockManager.isUnlocked(characters[newIndex]) && newIndex != selectedIndex) {
+                    newIndex = (newIndex - 1 + characters.length) % characters.length;
+                }
+                if (unlockManager.isUnlocked(characters[newIndex])) {
+                    selectedIndex = newIndex;
+                }
                 keyPressed = true;
             } else if (downPressed) {
-                selectedIndex = (selectedIndex + 1) % characters.length;
+                // Skip locked characters
+                int newIndex = (selectedIndex + 1) % characters.length;
+                while (!unlockManager.isUnlocked(characters[newIndex]) && newIndex != selectedIndex) {
+                    newIndex = (newIndex + 1) % characters.length;
+                }
+                if (unlockManager.isUnlocked(characters[newIndex])) {
+                    selectedIndex = newIndex;
+                }
                 keyPressed = true;
             } else if (enterPressed) {
                 selectCharacter();
@@ -273,11 +298,15 @@ public class CharacterSelectionScreen extends ScalableGameScreen {
         // Draw character selection buttons
         for (int i = 0; i < characterButtons.length; i++) {
             final Rectangle button = characterButtons[i];
-            final boolean isHovered = button.contains(mouseX, mouseY);
+            final CharacterType character = characters[i];
+            final boolean isLocked = !unlockManager.isUnlocked(character);
+            final boolean isHovered = button.contains(mouseX, mouseY) && !isLocked;
             final boolean isSelected = i == selectedIndex;
 
             Color bgColor = BUTTON_COLOR;
-            if (isSelected) {
+            if (isLocked) {
+                bgColor = new Color(0.08f, 0.08f, 0.1f, 0.95f); // Darker for locked
+            } else if (isSelected) {
                 bgColor = BUTTON_HOVER_COLOR;
             } else if (isHovered) {
                 bgColor = new Color(0.18f, 0.18f, 0.2f, 0.95f);
@@ -300,11 +329,15 @@ public class CharacterSelectionScreen extends ScalableGameScreen {
 
         for (int i = 0; i < characterButtons.length; i++) {
             final Rectangle button = characterButtons[i];
-            final boolean isHovered = button.contains(mouseX, mouseY);
+            final CharacterType character = characters[i];
+            final boolean isLocked = !unlockManager.isUnlocked(character);
+            final boolean isHovered = button.contains(mouseX, mouseY) && !isLocked;
             final boolean isSelected = i == selectedIndex;
 
             Color borderColor = BUTTON_BORDER_COLOR;
-            if (isSelected || isHovered) {
+            if (isLocked) {
+                borderColor = new Color(0.3f, 0.3f, 0.3f, 0.5f); // Gray for locked
+            } else if (isSelected || isHovered) {
                 borderColor = BUTTON_BORDER_HOVER;
             }
 
@@ -330,13 +363,29 @@ public class CharacterSelectionScreen extends ScalableGameScreen {
         for (int i = 0; i < characterButtons.length; i++) {
             final Rectangle button = characterButtons[i];
             final CharacterType character = characters[i];
+            final boolean isLocked = !unlockManager.isUnlocked(character);
             final boolean isSelected = i == selectedIndex;
 
-            buttonFont.setColor(isSelected ? Color.WHITE : TEXT_COLOR);
-            layout.setText(buttonFont, character.getDisplayName());
-            buttonFont.draw(batch, layout,
-                button.x + (button.width - layout.width) / 2f,
-                button.y + (button.height + layout.height) / 2f);
+            if (isLocked) {
+                buttonFont.setColor(new Color(0.4f, 0.4f, 0.4f, 0.8f)); // Gray for locked
+                layout.setText(buttonFont, character.getDisplayName());
+                buttonFont.draw(batch, layout,
+                    button.x + (button.width - layout.width) / 2f,
+                    button.y + (button.height + layout.height) / 2f + 15);
+
+                // Draw LOCKED text
+                smallFont.setColor(new Color(0.6f, 0.1f, 0.1f, 0.8f)); // Red
+                layout.setText(smallFont, "LOCKED");
+                smallFont.draw(batch, layout,
+                    button.x + (button.width - layout.width) / 2f,
+                    button.y + (button.height + layout.height) / 2f - 15);
+            } else {
+                buttonFont.setColor(isSelected ? Color.WHITE : TEXT_COLOR);
+                layout.setText(buttonFont, character.getDisplayName());
+                buttonFont.draw(batch, layout,
+                    button.x + (button.width - layout.width) / 2f,
+                    button.y + (button.height + layout.height) / 2f);
+            }
         }
 
         // Select button text
