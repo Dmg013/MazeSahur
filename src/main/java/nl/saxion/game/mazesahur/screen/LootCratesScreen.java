@@ -266,7 +266,7 @@ public class LootCratesScreen extends ScalableGameScreen {
         LootReward reward = crateService.openCrate(type);
 
         // Show animated opening screen
-        CrateOpeningScreen openingScreen = new CrateOpeningScreen(type, reward);
+        CrateOpeningScreen openingScreen = new CrateOpeningScreen(type, reward, currencyManager, crateService);
         GameApp.addScreen("CrateOpening", openingScreen);
         GameApp.switchScreen("CrateOpening");
     }

@@ -9,6 +9,7 @@ import com.badlogic.gdx.graphics.g2d.SpriteBatch;
 import com.badlogic.gdx.graphics.glutils.ShapeRenderer;
 import com.badlogic.gdx.math.Interpolation;
 import com.badlogic.gdx.math.MathUtils;
+import com.badlogic.gdx.math.Rectangle;
 import nl.saxion.game.mazesahur.model.*;
 import nl.saxion.gameapp.GameApp;
 import nl.saxion.gameapp.screens.ScalableGameScreen;
@@ -61,14 +62,21 @@ public class CrateOpeningScreen extends ScalableGameScreen {
 
     private final CrateType crateType;
     private final LootReward reward;
+    private final CurrencyManager currencyManager;
+    private final CrateOpeningService crateService;
+
+    private Rectangle rollAgainButton;
 
     private float shakeIntensity = 0f;
     private Random random = new Random();
 
-    public CrateOpeningScreen(CrateType crateType, LootReward reward) {
+    public CrateOpeningScreen(CrateType crateType, LootReward reward,
+                              CurrencyManager currencyManager, CrateOpeningService crateService) {
         super(VIEWPORT_WIDTH, VIEWPORT_HEIGHT);
         this.crateType = crateType;
         this.reward = reward;
+        this.currencyManager = currencyManager;
+        this.crateService = crateService;
     }
 
     @Override
@@ -85,6 +93,8 @@ public class CrateOpeningScreen extends ScalableGameScreen {
 
         smallFont = new BitmapFont();
         smallFont.getData().setScale(1.5f);
+
+        rollAgainButton = new Rectangle(VIEWPORT_WIDTH / 2f - 180, 60, 360, 80);
 
         // Generate scroll items - heavily weighted to show good items (creates desire)
         generateScrollItems();
@@ -205,7 +215,21 @@ public class CrateOpeningScreen extends ScalableGameScreen {
                 break;
 
             case DONE:
-                if (Gdx.input.justTouched() || phaseTimer >= 5.0f) {
+                if (Gdx.input.justTouched()) {
+                    int mouseX = Gdx.input.getX();
+                    int mouseY = VIEWPORT_HEIGHT - Gdx.input.getY();
+                    boolean canAfford = currencyManager.getBalance() >= crateType.getCost();
+                    if (rollAgainButton.contains(mouseX, mouseY) && canAfford) {
+                        if (currencyManager.spendCoins(crateType.getCost())) {
+                            LootReward nextReward = crateService.openCrate(crateType);
+                            CrateOpeningScreen openingScreen = new CrateOpeningScreen(crateType, nextReward, currencyManager, crateService);
+                            GameApp.addScreen("CrateOpening", openingScreen);
+                            GameApp.switchScreen("CrateOpening");
+                        }
+                    } else {
+                        GameApp.switchScreen("LootCrates");
+                    }
+                } else if (phaseTimer >= 5.0f) {
                     GameApp.switchScreen("LootCrates");
                 }
                 break;
@@ -414,16 +438,42 @@ public class CrateOpeningScreen extends ScalableGameScreen {
         }
         smallFont.draw(batch, layout, (VIEWPORT_WIDTH - layout.width) / 2f, centerY - 50);
 
-        // Click to continue
-        if (currentPhase == Phase.DONE) {
+        boolean showRollButton = currentPhase == Phase.DONE;
+        boolean canAfford = false;
+        if (showRollButton) {
             float alpha = MathUtils.sin(phaseTimer * 3f) * 0.5f + 0.5f;
             smallFont.setColor(TEXT_COLOR.r, TEXT_COLOR.g, TEXT_COLOR.b, alpha);
             layout.setText(smallFont, "Click anywhere to continue");
             smallFont.draw(batch, layout, (VIEWPORT_WIDTH - layout.width) / 2f, 100);
+            canAfford = currencyManager.getBalance() >= crateType.getCost();
         }
 
         buttonFont.getData().setScale(2.5f);
         batch.end();
+
+        if (showRollButton) {
+            shapeRenderer.begin(ShapeRenderer.ShapeType.Filled);
+            if (canAfford) {
+                shapeRenderer.setColor(0.12f, 0.12f, 0.15f, 0.95f);
+            } else {
+                shapeRenderer.setColor(0.08f, 0.08f, 0.1f, 0.95f);
+            }
+            shapeRenderer.rect(rollAgainButton.x, rollAgainButton.y, rollAgainButton.width, rollAgainButton.height);
+            shapeRenderer.end();
+
+            shapeRenderer.begin(ShapeRenderer.ShapeType.Line);
+            shapeRenderer.setColor(canAfford ? new Color(0.9f, 0.15f, 0.15f, 1.0f) : new Color(0.4f, 0.1f, 0.1f, 0.6f));
+            shapeRenderer.rect(rollAgainButton.x, rollAgainButton.y, rollAgainButton.width, rollAgainButton.height);
+            shapeRenderer.end();
+
+            batch.begin();
+            buttonFont.setColor(canAfford ? TEXT_COLOR : new Color(0.6f, 0.6f, 0.6f, 0.9f));
+            layout.setText(buttonFont, "ROLL AGAIN (" + crateType.getCost() + ")");
+            buttonFont.draw(batch, layout,
+                rollAgainButton.x + (rollAgainButton.width - layout.width) / 2f,
+                rollAgainButton.y + (rollAgainButton.height + layout.height) / 2f);
+            batch.end();
+        }
     }
 
     @Override
