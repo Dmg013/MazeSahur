@@ -33,6 +33,12 @@ public class MultiplayerSession implements NetworkClientCallback {
     private volatile EnemySnapshot enemySnapshot;
     private final ConcurrentLinkedQueue<HorrorEvent> incomingEvents = new ConcurrentLinkedQueue<>();
 
+    // Level system
+    private volatile int currentLevel = 1;
+    private volatile float exitX;
+    private volatile float exitZ;
+    private LevelChangeListener levelChangeListener;
+
     public MultiplayerSession(final NetworkSessionConfig config) {
         this.config = config;
         this.networkClient = new NetworkClient(URI.create(config.getServerUrl()), config.getRoomId(), config.getPlayerName(), this);
@@ -170,6 +176,9 @@ public class MultiplayerSession implements NetworkClientCallback {
                 case "event":
                     handleEvent(root);
                     break;
+                case "level_change":
+                    handleLevelChange(root);
+                    break;
                 default:
                     System.out.println("[MultiplayerSession] Unknown message type: " + type);
             }
@@ -197,6 +206,9 @@ public class MultiplayerSession implements NetworkClientCallback {
     private void handleJoined(final JsonNode root) {
         playerId = root.path("playerId").asText();
         seed = root.path("seed").asLong();
+        currentLevel = root.path("currentLevel").asInt(1);
+        exitX = (float) root.path("exitX").asDouble();
+        exitZ = (float) root.path("exitZ").asDouble();
         final JsonNode playersNode = root.path("players");
         if (playersNode.isArray()) {
             for (JsonNode node : playersNode) {
@@ -207,7 +219,8 @@ public class MultiplayerSession implements NetworkClientCallback {
         joined = true;
         joinLatch.countDown();
         System.out.println("[MultiplayerSession] Joined room " + root.path("room").asText()
-            + " as " + playerId + " seed=" + seed);
+            + " as " + playerId + " level=" + currentLevel + " seed=" + seed
+            + " exit=(" + exitX + "," + exitZ + ")");
     }
 
     private void handleState(final JsonNode root) {
@@ -238,6 +251,44 @@ public class MultiplayerSession implements NetworkClientCallback {
         final long eventSeed = root.path("seed").asLong(System.currentTimeMillis());
 
         incomingEvents.add(new HorrorEvent(id, type, scope, duration, intensity, eventSeed, true));
+    }
+
+    private void handleLevelChange(final JsonNode root) {
+        currentLevel = root.path("newLevel").asInt(1);
+        seed = root.path("newSeed").asLong();
+        exitX = (float) root.path("exitX").asDouble();
+        exitZ = (float) root.path("exitZ").asDouble();
+        final float spawnX = (float) root.path("spawnX").asDouble(12f);
+        final float spawnZ = (float) root.path("spawnZ").asDouble(12f);
+
+        System.out.println("[MultiplayerSession] Level changed to " + currentLevel + " seed=" + seed);
+
+        if (levelChangeListener != null) {
+            levelChangeListener.onLevelChanged(currentLevel, seed, exitX, exitZ, spawnX, spawnZ);
+        }
+    }
+
+    /**
+     * Callback interface voor level change events.
+     */
+    public interface LevelChangeListener {
+        void onLevelChanged(int newLevel, long newSeed, float exitX, float exitZ, float spawnX, float spawnZ);
+    }
+
+    public void setLevelChangeListener(final LevelChangeListener listener) {
+        this.levelChangeListener = listener;
+    }
+
+    public int getCurrentLevel() {
+        return currentLevel;
+    }
+
+    public float getExitX() {
+        return exitX;
+    }
+
+    public float getExitZ() {
+        return exitZ;
     }
 
     // Message DTOs for serialization

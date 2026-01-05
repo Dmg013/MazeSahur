@@ -104,6 +104,12 @@ public class GameUI {
         font.setColor(ACCENT_RED);
         font.draw(batch, "MAZESAHUR", 20, screenHeight - 20);
 
+        // Top-center: Level indicator
+        font.setColor(TEXT_COLOR);
+        final String levelText = "LEVEL " + gameScreen.getCurrentLevel() + " / 5";
+        layout.setText(font, levelText);
+        font.draw(batch, layout, (screenWidth - layout.width) / 2f, screenHeight - 20);
+
         // Top-right corner: Status indicators
         drawStatusIndicators(lightingManager, player, screenWidth, screenHeight);
 

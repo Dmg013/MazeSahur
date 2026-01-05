@@ -11,7 +11,6 @@ import java.util.List;
 import java.util.Random;
 import nl.saxion.game.mazesahur.event.EventManager;
 import nl.saxion.game.mazesahur.event.HorrorEvent;
-import nl.saxion.game.mazesahur.event.HorrorEventType;
 import nl.saxion.game.mazesahur.model.CharacterType;
 import nl.saxion.game.mazesahur.net.MultiplayerSession;
 import nl.saxion.game.mazesahur.net.RemotePlayerState;
@@ -41,10 +40,10 @@ public class GameScreen extends ScalableGameScreen {
     // Core components
     private PerspectiveCamera camera;
     private final Player player;
-    private final Enemy enemy;
-    private final Maze maze;
-    private final List<PhotoFrame> photoFrames;
-    private final List<Boost> boosts;
+    private Enemy enemy;
+    private Maze maze;
+    private List<PhotoFrame> photoFrames;
+    private List<Boost> boosts;
 
     // Rendering systems
     private LightingManager lightingManager;
@@ -96,6 +95,11 @@ public class GameScreen extends ScalableGameScreen {
     private Sound whisperSound;
     private Sound rushSound;
     private Sound hallucinationSound;
+
+    // Level system
+    private int currentLevel = 1;
+    private Vector3 exitPosition = new Vector3();
+    private boolean showExitMarker = true;
 
     /**
      * Creates a new game screen with default settings.
@@ -160,6 +164,25 @@ public class GameScreen extends ScalableGameScreen {
         yaw = 0;
         pitch = 0;
         firstMouse = true;
+
+        // Register level change listener for multiplayer
+        if (networked && session != null) {
+            session.setLevelChangeListener(new MultiplayerSession.LevelChangeListener() {
+                @Override
+                public void onLevelChanged(final int newLevel, final long newSeed,
+                                           final float exitX, final float exitZ,
+                                           final float spawnX, final float spawnZ) {
+                    handleLevelChange(newLevel, newSeed, exitX, exitZ, spawnX, spawnZ);
+                }
+            });
+
+            // Haal huidige level info op (voor late join)
+            currentLevel = session.getCurrentLevel();
+            exitPosition.set(session.getExitX(), GameConfig.PLAYER_HEIGHT, session.getExitZ());
+        } else {
+            // Singleplayer: exit positie direct bepalen
+            findExitLocation();
+        }
 
         System.out.println("[GameScreen] Using maze seed: " + seed + " networked=" + networked
             + " character=" + localCharacterType.name());
@@ -323,6 +346,11 @@ public class GameScreen extends ScalableGameScreen {
             }
             updateCamera();
 
+            // Singleplayer exit check
+            if (!networked) {
+                checkSingleplayerExit();
+            }
+
             // Update boosts and check for pickups
             for (Boost boost : boosts) {
                 boost.update(delta);
@@ -358,6 +386,12 @@ public class GameScreen extends ScalableGameScreen {
 
         // Render boost pickups
         mazeRenderer.renderBoosts(camera, boosts);
+
+        // Render exit marker
+        if (showExitMarker) {
+            mazeRenderer.renderExitMarker(camera, exitPosition);
+        }
+
         // Render remote players (if any)
         if (networked) {
             mazeRenderer.renderRemotePlayers(camera, remotePlayers);
@@ -968,5 +1002,143 @@ public class GameScreen extends ScalableGameScreen {
     @Override
     public void dispose() {
         hide();
+    }
+
+    /**
+     * Required by InputProcessor interface (libGDX compatibility).
+     * Called when the mouse wheel is scrolled.
+     */
+    public boolean scrolled(final int amount) {
+        return false;
+    }
+
+    /**
+     * Wordt aangeroepen wanneer de server een level change broadcast stuurt.
+     * Regenereert de maze en reset de speler.
+     */
+    private void handleLevelChange(final int newLevel, final long newSeed,
+                                    final float exitX, final float exitZ,
+                                    final float spawnX, final float spawnZ) {
+        System.out.println("[GameScreen] ====== LEVEL CHANGE TO LEVEL " + newLevel + " ======");
+
+        currentLevel = newLevel;
+
+        // Vernietig oude maze renderer
+        if (mazeRenderer != null) {
+            mazeRenderer.dispose();
+        }
+
+        // Genereer nieuwe maze
+        maze = new Maze(GameConfig.MAZE_SIZE, GameConfig.MAZE_SIZE, newSeed);
+        maze.generate();
+
+        // Herbouw renderer
+        mazeRenderer = new MazeRenderer(maze, materialManager, lightingManager);
+        mazeRenderer.initialize();
+
+        // Herlaad photo frames en boosts voor nieuwe level
+        photoFrames = createPhotoFramesOnWalls();
+        mazeRenderer.loadPhotoFrames(photoFrames);
+
+        boosts = createBoostPickups();
+        mazeRenderer.loadBoosts(boosts);
+
+        // Update exit positie
+        exitPosition.set(exitX, GameConfig.PLAYER_HEIGHT, exitZ);
+
+        // Reset speler positie
+        player.getPosition().set(spawnX, GameConfig.PLAYER_HEIGHT, spawnZ);
+
+        // Recreate enemy with new maze (Enemy has final Maze reference)
+        enemy = new Enemy(maze, player);
+        enemy.initialize();
+
+        // Recreate event manager with new maze and enemy
+        eventManager = new EventManager(
+            maze,
+            player,
+            enemy,
+            lightingManager,
+            networked,
+            whisperSound,
+            rushSound,
+            hallucinationSound
+        );
+
+        System.out.println("[GameScreen] Level change complete!");
+    }
+
+    /**
+     * Vindt exit locatie voor singleplayer (zelfde algoritme als server).
+     */
+    private void findExitLocation() {
+        final float spawnX = 12f * Maze.CELL_SIZE + Maze.CELL_SIZE / 2f;
+        final float spawnZ = 12f * Maze.CELL_SIZE + Maze.CELL_SIZE / 2f;
+
+        float bestDist = 0f;
+        int bestGridX = -1;
+        int bestGridZ = -1;
+
+        for (int z = 1; z < maze.getHeight() - 1; z++) {
+            for (int x = 1; x < maze.getWidth() - 1; x++) {
+                if (!maze.isWall(x, z)) {
+                    final float worldX = x * Maze.CELL_SIZE + Maze.CELL_SIZE / 2f;
+                    final float worldZ = z * Maze.CELL_SIZE + Maze.CELL_SIZE / 2f;
+
+                    final float dx = worldX - spawnX;
+                    final float dz = worldZ - spawnZ;
+                    final float dist = (float) Math.sqrt(dx * dx + dz * dz);
+
+                    if (dist > bestDist) {
+                        bestDist = dist;
+                        bestGridX = x;
+                        bestGridZ = z;
+                    }
+                }
+            }
+        }
+
+        if (bestGridX == -1) {
+            bestGridX = maze.getWidth() - 2;
+            bestGridZ = maze.getHeight() - 2;
+        }
+
+        exitPosition.set(
+            bestGridX * Maze.CELL_SIZE + Maze.CELL_SIZE / 2f,
+            GameConfig.PLAYER_HEIGHT,
+            bestGridZ * Maze.CELL_SIZE + Maze.CELL_SIZE / 2f
+        );
+    }
+
+    public int getCurrentLevel() {
+        return currentLevel;
+    }
+
+    private void checkSingleplayerExit() {
+        final float dx = player.getPosition().x - exitPosition.x;
+        final float dz = player.getPosition().z - exitPosition.z;
+        final float distSquared = dx * dx + dz * dz;
+
+        if (distSquared < 2.5f * 2.5f) {
+            handleSingleplayerLevelTransition();
+        }
+    }
+
+    private void handleSingleplayerLevelTransition() {
+        currentLevel++;
+        if (currentLevel > 5) {
+            currentLevel = 1;  // Loop terug naar level 1
+        }
+
+        System.out.println("[GameScreen] Singleplayer level transition to " + currentLevel);
+
+        // Nieuwe seed
+        final long newSeed = System.currentTimeMillis() ^ currentLevel;
+
+        // Simuleer server level change
+        handleLevelChange(currentLevel, newSeed, 0, 0, 12f, 12f);
+
+        // Exit opnieuw vinden (omdat handleLevelChange niet automatisch doet voor SP)
+        findExitLocation();
     }
 }

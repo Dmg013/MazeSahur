@@ -17,6 +17,7 @@ import nl.saxion.game.mazesahur.entity.Player;
 import com.badlogic.gdx.math.Vector3;
 import nl.saxion.game.mazesahur.server.protocol.Messages.InputMessage;
 import nl.saxion.game.mazesahur.server.protocol.Messages.JoinedResponse;
+import nl.saxion.game.mazesahur.server.protocol.Messages.LevelChangeMessage;
 import nl.saxion.game.mazesahur.server.protocol.Messages.PlayerState;
 import nl.saxion.game.mazesahur.server.protocol.Messages.StateMessage;
 import nl.saxion.game.mazesahur.server.protocol.Messages.EnemyState;
@@ -29,8 +30,8 @@ import nl.saxion.game.mazesahur.world.Maze;
 public class Room {
 
     private final String roomId;
-    private final long seed;
-    private final Maze maze;
+    private long seed;
+    private Maze maze;
     private final Map<String, PlayerState> players = new ConcurrentHashMap<>();
     private final Map<String, InputMessage> latestInputs = new ConcurrentHashMap<>();
     private final CopyOnWriteArraySet<Channel> channels = new CopyOnWriteArraySet<>();
@@ -38,12 +39,23 @@ public class Room {
     private final Player proxyPlayer;
     private final Enemy enemy;
 
+    // Level system
+    private int currentLevel = 1;
+    private float exitX;
+    private float exitZ;
+    private static final float EXIT_TRIGGER_RADIUS = 2.5f;
+    private static final int MAX_LEVELS = 5;
+
     public Room(final String roomId, final long seed, final ObjectMapper mapper) {
         this.roomId = roomId;
         this.seed = seed;
         this.mapper = mapper;
         this.maze = new Maze(GameConfig.MAZE_SIZE, GameConfig.MAZE_SIZE, seed);
         this.maze.generate();
+        
+        // Find exit location for level 1
+        findAndSetExitLocation();
+        
         this.proxyPlayer = new Player(new Vector3(12f, GameConfig.PLAYER_HEIGHT, 12f));
         this.enemy = new Enemy(maze, proxyPlayer);
         this.enemy.initialize();
@@ -105,6 +117,12 @@ public class Room {
             }
         }
 
+        // Check if any player reached the exit
+        if (checkAnyPlayerAtExit()) {
+            handleLevelTransition();
+            // After level transition, new state will be broadcast automatically
+        }
+
         // Update proxy target to nearest player
         final PlayerState target = nearestPlayerToEnemy();
         if (target != null) {
@@ -120,6 +138,7 @@ public class Room {
         stateMsg.ts = System.currentTimeMillis();
         stateMsg.players = new ArrayList<>(players.values());
         stateMsg.enemy = buildEnemyState();
+        stateMsg.currentLevel = currentLevel;
 
         // Broadcast
         final String json;
@@ -145,6 +164,9 @@ public class Room {
         joined.room = roomId;
         joined.seed = seed;
         joined.players = new ArrayList<>(players.values());
+        joined.currentLevel = currentLevel;
+        joined.exitX = exitX;
+        joined.exitZ = exitZ;
         return joined;
     }
 
@@ -216,6 +238,143 @@ public class Room {
     private float[] defaultSpawnPosition() {
         // Spawn near the same coordinates as singleplayer (12,12)
         return new float[] {12f, 12f};
+    }
+
+    /**
+     * Zoekt een geschikte exit locatie: ver van spawn (12, 12), in een open vakje.
+     * Strategie: Zoek de verste open tegel van de spawn.
+     */
+    private void findAndSetExitLocation() {
+        final float spawnX = 12f * Maze.CELL_SIZE + Maze.CELL_SIZE / 2f;
+        final float spawnZ = 12f * Maze.CELL_SIZE + Maze.CELL_SIZE / 2f;
+
+        float bestDist = 0f;
+        int bestGridX = -1;
+        int bestGridZ = -1;
+
+        // Itereer door alle cellen en vind de verste open tegel
+        for (int z = 1; z < maze.getHeight() - 1; z++) {
+            for (int x = 1; x < maze.getWidth() - 1; x++) {
+                if (!maze.isWall(x, z)) {
+                    // Converteer naar world coords
+                    final float worldX = x * Maze.CELL_SIZE + Maze.CELL_SIZE / 2f;
+                    final float worldZ = z * Maze.CELL_SIZE + Maze.CELL_SIZE / 2f;
+
+                    final float dx = worldX - spawnX;
+                    final float dz = worldZ - spawnZ;
+                    final float dist = (float) Math.sqrt(dx * dx + dz * dz);
+
+                    if (dist > bestDist) {
+                        bestDist = dist;
+                        bestGridX = x;
+                        bestGridZ = z;
+                    }
+                }
+            }
+        }
+
+        // Fallback als geen exit gevonden (zou niet moeten gebeuren)
+        if (bestGridX == -1) {
+            bestGridX = maze.getWidth() - 2;
+            bestGridZ = maze.getHeight() - 2;
+        }
+
+        exitX = bestGridX * Maze.CELL_SIZE + Maze.CELL_SIZE / 2f;
+        exitZ = bestGridZ * Maze.CELL_SIZE + Maze.CELL_SIZE / 2f;
+
+        System.out.println("[Room] Level " + currentLevel + " exit at: (" + exitX + ", " + exitZ + ")");
+    }
+
+    /**
+     * Controleert of een van de spelers de exit heeft bereikt.
+     */
+    private boolean checkAnyPlayerAtExit() {
+        for (PlayerState state : players.values()) {
+            final float dx = state.x - exitX;
+            final float dz = state.z - exitZ;
+            final float distSquared = dx * dx + dz * dz;
+
+            if (distSquared < EXIT_TRIGGER_RADIUS * EXIT_TRIGGER_RADIUS) {
+                System.out.println("[Room] Player " + state.name + " reached exit!");
+                return true;
+            }
+        }
+        return false;
+    }
+
+    /**
+     * Voert een level transitie uit: verhoog level, nieuwe maze, reset posities.
+     */
+    private void handleLevelTransition() {
+        currentLevel++;
+
+        // Als max levels bereikt, loop terug naar 1
+        if (currentLevel > MAX_LEVELS) {
+            System.out.println("[Room] Max level reached! Looping back to level 1.");
+            currentLevel = 1;
+        }
+
+        System.out.println("[Room] === LEVEL TRANSITION TO LEVEL " + currentLevel + " ===");
+
+        // Genereer nieuwe seed (deterministic maar verschillend per level)
+        final long baseSeed = System.currentTimeMillis();
+        seed = baseSeed ^ currentLevel;
+
+        // Regenereer maze
+        maze = new Maze(GameConfig.MAZE_SIZE, GameConfig.MAZE_SIZE, seed);
+        maze.generate();
+
+        // Vind nieuwe exit
+        findAndSetExitLocation();
+
+        // Reset alle spelerposities naar spawn
+        final float spawnX = 12f;
+        final float spawnZ = 12f;
+        for (PlayerState state : players.values()) {
+            state.x = spawnX;
+            state.y = GameConfig.PLAYER_HEIGHT;
+            state.z = spawnZ;
+            state.yaw = 0f;
+        }
+
+        // Reset enemy
+        proxyPlayer.getPosition().set(spawnX, GameConfig.PLAYER_HEIGHT, spawnZ);
+        enemy.initialize();
+
+        // Broadcast level change event
+        broadcastLevelChange();
+    }
+
+    /**
+     * Stuurt een LevelChangeMessage naar alle clients.
+     */
+    private void broadcastLevelChange() {
+        final LevelChangeMessage msg = new LevelChangeMessage();
+        msg.type = "level_change";
+        msg.newLevel = currentLevel;
+        msg.newSeed = seed;
+        msg.exitX = exitX;
+        msg.exitZ = exitZ;
+        msg.spawnX = 12f;
+        msg.spawnZ = 12f;
+
+        final String json;
+        try {
+            json = mapper.writeValueAsString(msg);
+        } catch (Exception e) {
+            System.err.println("[Room] Failed to serialize level_change: " + e.getMessage());
+            return;
+        }
+
+        final TextWebSocketFrame frame = new TextWebSocketFrame(json);
+        for (Channel ch : channels) {
+            if (ch.isActive()) {
+                ch.writeAndFlush(frame.retainedDuplicate());
+            }
+        }
+        frame.release();
+
+        System.out.println("[Room] Broadcasted level_change to " + channels.size() + " clients");
     }
 
     private PlayerState nearestPlayerToEnemy() {

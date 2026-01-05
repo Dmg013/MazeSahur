@@ -79,6 +79,10 @@ public class MazeRenderer {
     private ModelInstance wallRightInstance;
     private ModelInstance wallTopInstance;
 
+    // Exit marker for level transitions
+    private Model exitMarkerModel;
+    private ModelInstance exitMarkerInstance;
+
     private ModelInstance floorInstance;
     private ModelInstance roofInstance;
     private List<ModelInstance> wallInstances;
@@ -1784,6 +1788,41 @@ public class MazeRenderer {
         Gdx.gl.glDisable(GL20.GL_BLEND);
     }
 
+    /**
+     * Rendert een visuele marker voor de exit locatie.
+     */
+    public void renderExitMarker(final PerspectiveCamera camera, final Vector3 exitPosition) {
+        // Statische model cache (maak 1x aan)
+        if (exitMarkerModel == null) {
+            final ModelBuilder builder = new ModelBuilder();
+            final Material material = new Material();
+            material.set(ColorAttribute.createDiffuse(0.2f, 1.0f, 0.2f, 1.0f));  // Groen
+            material.set(ColorAttribute.createEmissive(0.0f, 0.8f, 0.0f, 1.0f)); // Gloeiend groen
+
+            exitMarkerModel = builder.createBox(
+                1.5f, 3.0f, 1.5f,  // Grootte: 1.5x3x1.5 (verticale pilaar)
+                material,
+                VertexAttributes.Usage.Position | VertexAttributes.Usage.Normal
+            );
+            exitMarkerInstance = new ModelInstance(exitMarkerModel);
+        }
+
+        // Positioneer en render
+        exitMarkerInstance.transform.setToTranslation(exitPosition);
+
+        // Animatie: floating effect
+        final float time = System.currentTimeMillis() / 1000f;
+        final float bobHeight = (float) Math.sin(time * 2.0) * 0.3f;
+        exitMarkerInstance.transform.translate(0, bobHeight, 0);
+
+        // Rotatie animatie
+        exitMarkerInstance.transform.rotate(Vector3.Y, time * 30f);
+
+        modelBatch.begin(camera);
+        modelBatch.render(exitMarkerInstance, enemyEnvironment);
+        modelBatch.end();
+    }
+
     public void dispose() {
         if (modelBatch != null) {
             modelBatch.dispose();
@@ -1835,6 +1874,9 @@ public class MazeRenderer {
         }
         if (footstepManager != null) {
             footstepManager.dispose();
+        }
+        if (exitMarkerModel != null) {
+            exitMarkerModel.dispose();
         }
     }
 }

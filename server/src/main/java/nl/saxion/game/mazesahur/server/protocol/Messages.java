@@ -41,6 +41,10 @@ public final class Messages {
         public String room;
         public long seed;
         public List<PlayerState> players;
+        // Level system
+        public int currentLevel;
+        public float exitX;
+        public float exitZ;
     }
 
     public static final class StateMessage extends BaseMessage {
@@ -48,6 +52,7 @@ public final class Messages {
         public List<PlayerState> players;
         public long seqAck;
         public EnemyState enemy;
+        public int currentLevel;
     }
 
     public static final class PlayerState {
@@ -65,5 +70,15 @@ public final class Messages {
         public float y;
         public float z;
         public float yaw;
+    }
+
+    @JsonInclude(JsonInclude.Include.NON_NULL)
+    public static final class LevelChangeMessage extends BaseMessage {
+        public int newLevel;
+        public long newSeed;
+        public float exitX;
+        public float exitZ;
+        public float spawnX;
+        public float spawnZ;
     }
 }
