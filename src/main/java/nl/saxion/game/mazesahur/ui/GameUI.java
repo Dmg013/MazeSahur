@@ -43,6 +43,8 @@ public class GameUI {
     private static final Color WARNING_COLOR = new Color(1.0f, 0.3f, 0.3f, 1.0f);
     private static final Color SUCCESS_COLOR = new Color(0.3f, 1.0f, 0.3f, 1.0f);
     private static final Color BOOST_COLOR = new Color(0.2f, 0.8f, 1.0f, 1.0f);
+    private static final Color ESP_COLOR = new Color(1.0f, 0.5f, 0.0f, 1.0f);
+    private static final Color ESP_BG = new Color(0.1f, 0.05f, 0.0f, 0.9f);
 
     private ShapeRenderer shapeRenderer;
     private SpriteBatch batch;
@@ -87,6 +89,26 @@ public class GameUI {
     public void render(final GameScreen gameScreen, final Player player,
                        final Enemy enemy, final LightingManager lightingManager,
                        final PerspectiveCamera camera, final java.util.List<RemotePlayerState> remotePlayers) {
+        render(gameScreen, player, enemy, lightingManager, camera, remotePlayers, false, null, 0f);
+    }
+
+    /**
+     * Renders the game UI with modern styling and optional exit ESP.
+     *
+     * @param gameScreen Reference to the game screen
+     * @param player The player entity
+     * @param enemy The enemy entity
+     * @param lightingManager The lighting manager
+     * @param camera The main game camera
+     * @param remotePlayers Remote players to show names for (nullable)
+     * @param showExitESP Whether to show exit ESP indicator
+     * @param exitPosition The exit position (nullable if showExitESP is false)
+     * @param playerYaw The player's yaw angle for direction calculation
+     */
+    public void render(final GameScreen gameScreen, final Player player,
+                       final Enemy enemy, final LightingManager lightingManager,
+                       final PerspectiveCamera camera, final java.util.List<RemotePlayerState> remotePlayers,
+                       final boolean showExitESP, final Vector3 exitPosition, final float playerYaw) {
         // Reset OpenGL state for 2D rendering
         Gdx.gl.glDisable(GL20.GL_DEPTH_TEST);
         Gdx.gl.glEnable(GL20.GL_BLEND);
@@ -126,7 +148,7 @@ public class GameUI {
 
         // Bottom-left: Subtle controls hint
         smallFont.setColor(TEXT_DIM);
-        smallFont.draw(batch, "ESC - Menu  |  F - Flashlight  |  SHIFT - Run", 20, 25);
+        smallFont.draw(batch, "ESC - Menu  |  F - Flashlight  |  SHIFT - Run  |  Y - Exit ESP", 20, 25);
 
         // Debug info (toggle with F3)
         if (Gdx.input.isKeyJustPressed(com.badlogic.gdx.Input.Keys.F3)) {
@@ -139,6 +161,11 @@ public class GameUI {
         // Draw remote player names above heads
         if (remotePlayers != null && camera != null) {
             drawPlayerNames(remotePlayers, camera, screenWidth, screenHeight);
+        }
+
+        // Draw exit ESP if enabled
+        if (showExitESP && exitPosition != null) {
+            drawExitESP(player.getPosition(), exitPosition, playerYaw, screenWidth, screenHeight);
         }
 
         batch.end();
@@ -205,6 +232,113 @@ public class GameUI {
         final String timeText = boostTimeRemaining + "s remaining";
         layout.setText(smallFont, timeText);
         smallFont.draw(batch, layout, (screenWidth - layout.width) / 2f, panelY + 20);
+    }
+
+    /**
+     * Draws the exit ESP indicator showing distance and direction to the exit.
+     */
+    private void drawExitESP(final Vector3 playerPos, final Vector3 exitPos, 
+                              final float playerYaw, final int screenWidth, final int screenHeight) {
+        // Calculate distance
+        final float dx = exitPos.x - playerPos.x;
+        final float dz = exitPos.z - playerPos.z;
+        final float distance = (float) Math.sqrt(dx * dx + dz * dz);
+
+        // Calculate angle to exit (in degrees, 0 = north)
+        float angleToExit = (float) Math.toDegrees(Math.atan2(dx, -dz));
+        
+        // Calculate relative angle (how much to turn from current facing)
+        float relativeAngle = angleToExit - playerYaw;
+        
+        // Normalize to -180 to 180
+        while (relativeAngle > 180) relativeAngle -= 360;
+        while (relativeAngle < -180) relativeAngle += 360;
+
+        // Panel dimensions
+        final float panelWidth = 200;
+        final float panelHeight = 120;
+        final float panelX = screenWidth - panelWidth - 20;
+        final float panelY = screenHeight / 2f - panelHeight / 2f;
+
+        // Draw panel background
+        batch.end();
+        shapeRenderer.begin(ShapeRenderer.ShapeType.Filled);
+        shapeRenderer.setColor(ESP_BG);
+        shapeRenderer.rect(panelX, panelY, panelWidth, panelHeight);
+        shapeRenderer.end();
+
+        // Border with pulsing effect
+        final float pulse = 0.7f + 0.3f * (float) Math.sin(System.currentTimeMillis() / 200.0);
+        shapeRenderer.begin(ShapeRenderer.ShapeType.Line);
+        Gdx.gl.glLineWidth(3f);
+        shapeRenderer.setColor(ESP_COLOR.r * pulse, ESP_COLOR.g * pulse, ESP_COLOR.b, 1f);
+        shapeRenderer.rect(panelX, panelY, panelWidth, panelHeight);
+        shapeRenderer.end();
+
+        // Draw compass arrow
+        final float compassCenterX = panelX + panelWidth / 2f;
+        final float compassCenterY = panelY + panelHeight - 45;
+        final float arrowLength = 30f;
+
+        // Convert relative angle to radians for drawing
+        final float arrowAngleRad = (float) Math.toRadians(-relativeAngle + 90);
+
+        shapeRenderer.begin(ShapeRenderer.ShapeType.Filled);
+        shapeRenderer.setColor(ESP_COLOR);
+
+        // Arrow tip
+        final float tipX = compassCenterX + (float) Math.cos(arrowAngleRad) * arrowLength;
+        final float tipY = compassCenterY + (float) Math.sin(arrowAngleRad) * arrowLength;
+
+        // Arrow base points
+        final float baseAngle1 = arrowAngleRad + (float) Math.toRadians(140);
+        final float baseAngle2 = arrowAngleRad - (float) Math.toRadians(140);
+        final float baseLength = arrowLength * 0.6f;
+
+        final float base1X = compassCenterX + (float) Math.cos(baseAngle1) * baseLength;
+        final float base1Y = compassCenterY + (float) Math.sin(baseAngle1) * baseLength;
+        final float base2X = compassCenterX + (float) Math.cos(baseAngle2) * baseLength;
+        final float base2Y = compassCenterY + (float) Math.sin(baseAngle2) * baseLength;
+
+        shapeRenderer.triangle(tipX, tipY, base1X, base1Y, base2X, base2Y);
+
+        // Center circle
+        shapeRenderer.setColor(ESP_BG);
+        shapeRenderer.circle(compassCenterX, compassCenterY, 8);
+        shapeRenderer.end();
+
+        shapeRenderer.begin(ShapeRenderer.ShapeType.Line);
+        shapeRenderer.setColor(ESP_COLOR);
+        shapeRenderer.circle(compassCenterX, compassCenterY, 8);
+        shapeRenderer.end();
+
+        // Resume batch for text
+        batch.begin();
+
+        // Title
+        font.setColor(ESP_COLOR);
+        layout.setText(font, "EXIT ESP");
+        font.draw(batch, layout, panelX + (panelWidth - layout.width) / 2f, panelY + panelHeight - 5);
+
+        // Distance text
+        font.setColor(1f, 1f, 1f, 1f);
+        final String distanceText = String.format("%.0f m", distance);
+        layout.setText(font, distanceText);
+        font.draw(batch, layout, panelX + (panelWidth - layout.width) / 2f, panelY + 35);
+
+        // Direction hint
+        smallFont.setColor(TEXT_DIM);
+        String directionHint;
+        if (Math.abs(relativeAngle) < 15) {
+            directionHint = "STRAIGHT AHEAD";
+            smallFont.setColor(SUCCESS_COLOR);
+        } else if (relativeAngle > 0) {
+            directionHint = "TURN RIGHT";
+        } else {
+            directionHint = "TURN LEFT";
+        }
+        layout.setText(smallFont, directionHint);
+        smallFont.draw(batch, layout, panelX + (panelWidth - layout.width) / 2f, panelY + 15);
     }
 
     /**

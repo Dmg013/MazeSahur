@@ -100,6 +100,7 @@ public class GameScreen extends ScalableGameScreen {
     private int currentLevel = 1;
     private Vector3 exitPosition = new Vector3();
     private boolean showExitMarker = true;
+    private boolean showExitESP = false;
 
     /**
      * Creates a new game screen with default settings.
@@ -172,7 +173,13 @@ public class GameScreen extends ScalableGameScreen {
                 public void onLevelChanged(final int newLevel, final long newSeed,
                                            final float exitX, final float exitZ,
                                            final float spawnX, final float spawnZ) {
-                    handleLevelChange(newLevel, newSeed, exitX, exitZ, spawnX, spawnZ);
+                    // CRITICAL: Must run on rendering thread for OpenGL operations
+                    Gdx.app.postRunnable(new Runnable() {
+                        @Override
+                        public void run() {
+                            handleLevelChange(newLevel, newSeed, exitX, exitZ, spawnX, spawnZ);
+                        }
+                    });
                 }
             });
 
@@ -392,6 +399,11 @@ public class GameScreen extends ScalableGameScreen {
             mazeRenderer.renderExitMarker(camera, exitPosition);
         }
 
+        // Render exit ESP (door muren zichtbaar) als ingeschakeld
+        if (showExitESP) {
+            mazeRenderer.renderExitESP(camera, exitPosition, player.getPosition());
+        }
+
         // Render remote players (if any)
         if (networked) {
             mazeRenderer.renderRemotePlayers(camera, remotePlayers);
@@ -406,7 +418,8 @@ public class GameScreen extends ScalableGameScreen {
 
         // Render UI (hide during jumpscare)
         if (!jumpscareActive) {
-            gameUI.render(this, player, enemy, lightingManager, camera, remotePlayers);
+            gameUI.render(this, player, enemy, lightingManager, camera, remotePlayers,
+                         showExitESP, exitPosition, yaw);
         }
     }
 
@@ -754,6 +767,12 @@ public class GameScreen extends ScalableGameScreen {
                 + (showRailNetwork ? "ON" : "OFF"));
         }
 
+        // Toggle exit ESP (door muren zichtbaar)
+        if (Gdx.input.isKeyJustPressed(Input.Keys.Y)) {
+            showExitESP = !showExitESP;
+            System.out.println("[GameScreen] Exit ESP: " + (showExitESP ? "ON" : "OFF"));
+        }
+
         // Exit game
         if (Gdx.input.isKeyJustPressed(Input.Keys.ESCAPE)) {
             Gdx.input.setCursorCatched(false);
@@ -1072,8 +1091,9 @@ public class GameScreen extends ScalableGameScreen {
      * Vindt exit locatie voor singleplayer (zelfde algoritme als server).
      */
     private void findExitLocation() {
-        final float spawnX = 12f * Maze.CELL_SIZE + Maze.CELL_SIZE / 2f;
-        final float spawnZ = 12f * Maze.CELL_SIZE + Maze.CELL_SIZE / 2f;
+        // Spawn is at world position (12, 12), NOT grid position
+        final float spawnX = 12f;
+        final float spawnZ = 12f;
 
         float bestDist = 0f;
         int bestGridX = -1;

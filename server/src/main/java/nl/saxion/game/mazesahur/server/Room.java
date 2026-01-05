@@ -43,7 +43,9 @@ public class Room {
     private int currentLevel = 1;
     private float exitX;
     private float exitZ;
+    private float exitCooldown = 0f;
     private static final float EXIT_TRIGGER_RADIUS = 2.5f;
+    private static final float EXIT_COOLDOWN_DURATION = 3.0f;
     private static final int MAX_LEVELS = 5;
 
     public Room(final String roomId, final long seed, final ObjectMapper mapper) {
@@ -107,6 +109,11 @@ public class Room {
      * @param deltaSeconds fixed timestep
      */
     public void tick(final float deltaSeconds) {
+        // Update exit cooldown timer
+        if (exitCooldown > 0f) {
+            exitCooldown -= deltaSeconds;
+        }
+
         // Apply inputs to positions
         for (Map.Entry<String, PlayerState> entry : players.entrySet()) {
             final String playerId = entry.getKey();
@@ -117,9 +124,10 @@ public class Room {
             }
         }
 
-        // Check if any player reached the exit
-        if (checkAnyPlayerAtExit()) {
+        // Check if any player reached the exit (only if cooldown expired)
+        if (exitCooldown <= 0f && checkAnyPlayerAtExit()) {
             handleLevelTransition();
+            exitCooldown = EXIT_COOLDOWN_DURATION;
             // After level transition, new state will be broadcast automatically
         }
 
@@ -245,8 +253,9 @@ public class Room {
      * Strategie: Zoek de verste open tegel van de spawn.
      */
     private void findAndSetExitLocation() {
-        final float spawnX = 12f * Maze.CELL_SIZE + Maze.CELL_SIZE / 2f;
-        final float spawnZ = 12f * Maze.CELL_SIZE + Maze.CELL_SIZE / 2f;
+        // Spawn is at world position (12, 12), NOT grid position
+        final float spawnX = 12f;
+        final float spawnZ = 12f;
 
         float bestDist = 0f;
         int bestGridX = -1;

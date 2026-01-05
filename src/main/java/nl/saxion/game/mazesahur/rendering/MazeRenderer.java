@@ -16,6 +16,7 @@ import com.badlogic.gdx.graphics.g3d.shaders.DefaultShader;
 import com.badlogic.gdx.graphics.g3d.utils.ShaderProvider;
 import com.badlogic.gdx.graphics.g3d.Renderable;
 import com.badlogic.gdx.graphics.g3d.Environment;
+import com.badlogic.gdx.graphics.g3d.attributes.BlendingAttribute;
 import com.badlogic.gdx.graphics.g3d.attributes.ColorAttribute;
 import com.badlogic.gdx.graphics.g3d.environment.DirectionalLight;
 import com.badlogic.gdx.graphics.glutils.ShapeRenderer;
@@ -1823,6 +1824,92 @@ public class MazeRenderer {
         modelBatch.end();
     }
 
+    // ESP marker model (door muren zichtbaar)
+    private Model espMarkerModel;
+    private ModelInstance espMarkerInstance;
+
+    /**
+     * Rendert een ESP marker voor de exit - zichtbaar door muren heen.
+     * @param camera De camera
+     * @param exitPosition De exit positie
+     * @param playerPosition De speler positie (voor lijn)
+     */
+    public void renderExitESP(final PerspectiveCamera camera, final Vector3 exitPosition, 
+                               final Vector3 playerPosition) {
+        // Maak ESP marker model aan als deze nog niet bestaat
+        if (espMarkerModel == null) {
+            final ModelBuilder builder = new ModelBuilder();
+            final Material material = new Material();
+            // Fel oranje/rood voor ESP look
+            material.set(ColorAttribute.createDiffuse(1.0f, 0.3f, 0.0f, 0.8f));
+            material.set(ColorAttribute.createEmissive(1.0f, 0.5f, 0.0f, 1.0f));
+            material.set(new BlendingAttribute(GL20.GL_SRC_ALPHA, GL20.GL_ONE_MINUS_SRC_ALPHA));
+
+            espMarkerModel = builder.createBox(
+                2.0f, 4.0f, 2.0f,  // Iets groter dan normale marker
+                material,
+                VertexAttributes.Usage.Position | VertexAttributes.Usage.Normal
+            );
+            espMarkerInstance = new ModelInstance(espMarkerModel);
+        }
+
+        // Schakel depth test uit zodat marker door muren zichtbaar is
+        Gdx.gl.glDisable(GL20.GL_DEPTH_TEST);
+
+        // Positioneer marker
+        espMarkerInstance.transform.setToTranslation(exitPosition);
+
+        // Pulserende animatie
+        final float time = System.currentTimeMillis() / 1000f;
+        final float pulse = 1.0f + (float) Math.sin(time * 4.0) * 0.2f;
+        espMarkerInstance.transform.scale(pulse, pulse, pulse);
+
+        // Rotatie
+        espMarkerInstance.transform.rotate(Vector3.Y, time * 60f);
+
+        // Render marker
+        modelBatch.begin(camera);
+        modelBatch.render(espMarkerInstance, enemyEnvironment);
+        modelBatch.end();
+
+        // Render lijn van speler naar exit
+        renderESPLine(camera, playerPosition, exitPosition);
+
+        // Zet depth test weer aan
+        Gdx.gl.glEnable(GL20.GL_DEPTH_TEST);
+    }
+
+    private ShapeRenderer espShapeRenderer;
+
+    /**
+     * Rendert een lijn van de speler naar de exit positie.
+     */
+    private void renderESPLine(final PerspectiveCamera camera, final Vector3 from, final Vector3 to) {
+        if (espShapeRenderer == null) {
+            espShapeRenderer = new ShapeRenderer();
+        }
+
+        espShapeRenderer.setProjectionMatrix(camera.combined);
+        espShapeRenderer.begin(ShapeRenderer.ShapeType.Line);
+
+        // Pulserende kleur
+        final float time = System.currentTimeMillis() / 1000f;
+        final float r = 1.0f;
+        final float g = 0.3f + (float) Math.sin(time * 3.0) * 0.2f;
+        final float b = 0.0f;
+
+        Gdx.gl.glLineWidth(3f);
+        espShapeRenderer.setColor(r, g, b, 1f);
+
+        // Teken lijn op ooghoogte
+        espShapeRenderer.line(
+            from.x, from.y, from.z,
+            to.x, to.y + 1.5f, to.z
+        );
+
+        espShapeRenderer.end();
+    }
+
     public void dispose() {
         if (modelBatch != null) {
             modelBatch.dispose();
@@ -1877,6 +1964,12 @@ public class MazeRenderer {
         }
         if (exitMarkerModel != null) {
             exitMarkerModel.dispose();
+        }
+        if (espMarkerModel != null) {
+            espMarkerModel.dispose();
+        }
+        if (espShapeRenderer != null) {
+            espShapeRenderer.dispose();
         }
     }
 }
