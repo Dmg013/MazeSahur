@@ -39,11 +39,20 @@ public class MenuScreen extends ScalableGameScreen {
     private BitmapFont subtitleFont;
     private GlyphLayout glyphLayout;
 
+    // Textures for menu
+    private Texture backgroundTexture;
+    private Texture singleplayerTexture;
+    private Texture multiplayerTexture;
+    private Texture lootcratesTexture;
+
     // Button dimensions and positions (as percentages of screen size)
     private static final float BUTTON_WIDTH_PERCENT = 0.31f;  // 31% of screen width
     private static final float BUTTON_HEIGHT_PERCENT = 0.097f; // ~9.7% of screen height
     private static final float BUTTON_SPACING_PERCENT = 0.035f; // 3.5% of screen height
     private static final int BUTTON_BORDER_WIDTH = 3;
+
+    // Scale factor for button textures (to make them smaller)
+    private static final float BUTTON_TEXTURE_SCALE = 0.3f;
 
     // Actual button dimensions (calculated based on screen size)
     private int buttonWidth;
@@ -53,7 +62,6 @@ public class MenuScreen extends ScalableGameScreen {
     // Buttons (using Rectangle for hit detection)
     private Rectangle playButton;
     private Rectangle lootCratesButton;
-    private Rectangle settingsButton;
     private Rectangle multiplayerButton;
 
     // Currency manager
@@ -162,6 +170,12 @@ public class MenuScreen extends ScalableGameScreen {
         subtitleFont = new BitmapFont();
         subtitleFont.setColor(SUBTITLE_COLOR);
 
+        // Load textures
+        backgroundTexture = new Texture(Gdx.files.internal("img/menu_scherm.png"));
+        singleplayerTexture = new Texture(Gdx.files.internal("img/Singleplayer.png"));
+        multiplayerTexture = new Texture(Gdx.files.internal("img/multiplayer.png"));
+        lootcratesTexture = new Texture(Gdx.files.internal("img/Lootcrates.png"));
+
         // Initialize currency manager
         currencyManager = new CurrencyManager();
 
@@ -195,20 +209,29 @@ public class MenuScreen extends ScalableGameScreen {
         subtitleFont.getData().setScale(subtitleScale);
 
         // Calculate button positions (centered on screen)
-        int centerX = (screenWidth - buttonWidth) / 2;
-        int startY = screenHeight / 2 + 20;
-
+        // Use texture dimensions if available, otherwise use calculated dimensions
         if (playButton == null) {
             playButton = new Rectangle();
             lootCratesButton = new Rectangle();
-            settingsButton = new Rectangle();
             multiplayerButton = new Rectangle();
         }
 
-        playButton.set(centerX, startY, buttonWidth, buttonHeight);
-        lootCratesButton.set(centerX, startY - buttonHeight - buttonSpacing, buttonWidth, buttonHeight);
-        settingsButton.set(centerX, startY - 2 * (buttonHeight + buttonSpacing), buttonWidth, buttonHeight);
-        multiplayerButton.set(centerX, startY - 3 * (buttonHeight + buttonSpacing), buttonWidth, buttonHeight);
+        // Set button rectangles based on texture dimensions for proper hit detection
+        int centerX = screenWidth / 2;
+        int startY = screenHeight / 2 - 20;  // Moved down significantly
+
+        if (singleplayerTexture != null) {
+            float btnWidth = singleplayerTexture.getWidth() * BUTTON_TEXTURE_SCALE;
+            float btnHeight = singleplayerTexture.getHeight() * BUTTON_TEXTURE_SCALE;
+            float spacing = -112;  // Half of previous spacing, buttons very tightly packed
+            playButton.set(centerX - btnWidth / 2, startY, btnWidth, btnHeight);
+            multiplayerButton.set(centerX - btnWidth / 2, startY - btnHeight - spacing, btnWidth, btnHeight);
+            lootCratesButton.set(centerX - btnWidth / 2, startY - 2 * (btnHeight + spacing), btnWidth, btnHeight);
+        } else {
+            playButton.set(centerX - buttonWidth / 2, startY, buttonWidth, buttonHeight);
+            multiplayerButton.set(centerX - buttonWidth / 2, startY - buttonHeight - buttonSpacing, buttonWidth, buttonHeight);
+            lootCratesButton.set(centerX - buttonWidth / 2, startY - 2 * (buttonHeight + buttonSpacing), buttonWidth, buttonHeight);
+        }
     }
 
     @Override
@@ -242,7 +265,6 @@ public class MenuScreen extends ScalableGameScreen {
         // Check hover states
         boolean playHovered = !showMultiplayerForm && playButton.contains(mouseX, mouseY);
         boolean lootCratesHovered = !showMultiplayerForm && lootCratesButton.contains(mouseX, mouseY);
-        boolean settingsHovered = !showMultiplayerForm && settingsButton.contains(mouseX, mouseY);
         boolean multiplayerHovered = !showMultiplayerForm && multiplayerButton.contains(mouseX, mouseY);
 
         // Handle clicks
@@ -251,8 +273,6 @@ public class MenuScreen extends ScalableGameScreen {
                 onPlayClicked();
             } else if (lootCratesHovered) {
                 onLootCratesClicked();
-            } else if (settingsHovered) {
-                onSettingsClicked();
             } else if (multiplayerHovered) {
                 onMultiplayerClicked();
             }
@@ -262,88 +282,28 @@ public class MenuScreen extends ScalableGameScreen {
         Gdx.gl.glEnable(GL20.GL_BLEND);
         Gdx.gl.glBlendFunc(GL20.GL_SRC_ALPHA, GL20.GL_ONE_MINUS_SRC_ALPHA);
 
+        // Calculate hover scales for animations
+        float playScale = animationsComplete ? (playHovered ? 1.15f : 1.0f) :
+                          Interpolation.elasticOut.apply(0f, 1.0f, Math.min(1f, animationTime * 2f));
+        float lootCratesScale = animationsComplete ? (lootCratesHovered ? 1.15f : 1.0f) :
+                                Interpolation.elasticOut.apply(0f, 1.0f, Math.min(1f, (animationTime - 0.1f) * 2f));
+        float multiplayerScale = animationsComplete ? (multiplayerHovered ? 1.15f : 1.0f) :
+                                 Interpolation.elasticOut.apply(0f, 1.0f, Math.min(1f, (animationTime - 0.15f) * 2f));
 
-        // Draw buttons with shadows and animations
-        float playScale = animationsComplete ? (playHovered ? 1.05f : 1.0f) :
-                          Interpolation.elasticOut.apply(0f, 1f, Math.min(1f, animationTime * 2f));
-        float lootCratesScale = animationsComplete ? (lootCratesHovered ? 1.05f : 1.0f) :
-                                Interpolation.elasticOut.apply(0f, 1f, Math.min(1f, (animationTime - 0.1f) * 2f));
-        float settingsScale = animationsComplete ? (settingsHovered ? 1.05f : 1.0f) :
-                              Interpolation.elasticOut.apply(0f, 1f, Math.min(1f, (animationTime - 0.15f) * 2f));
-        float multiplayerScale = animationsComplete ? (multiplayerHovered ? 1.05f : 1.0f) :
-                                 Interpolation.elasticOut.apply(0f, 1f, Math.min(1f, (animationTime - 0.2f) * 2f));
-
-        shapeRenderer.begin(ShapeRenderer.ShapeType.Filled);
-
-        // Draw Play button
-        drawButtonWithShadow(playButton, playHovered, playScale);
-
-        // Draw Loot Crates button
-        drawButtonWithShadow(lootCratesButton, lootCratesHovered, lootCratesScale);
-
-        // Draw Settings button
-        drawButtonWithShadow(settingsButton, settingsHovered, settingsScale);
-
-        // Draw Multiplayer button
-        drawButtonWithShadow(multiplayerButton, multiplayerHovered, multiplayerScale);
-
-        shapeRenderer.end();
-
-        // Draw button borders with glow effect
-        shapeRenderer.begin(ShapeRenderer.ShapeType.Line);
-        Gdx.gl.glLineWidth(BUTTON_BORDER_WIDTH);
-
-        drawButtonBorder(playButton, playHovered, playScale);
-        drawButtonBorder(lootCratesButton, lootCratesHovered, lootCratesScale);
-        drawButtonBorder(settingsButton, settingsHovered, settingsScale);
-        drawButtonBorder(multiplayerButton, multiplayerHovered, multiplayerScale);
-
-        shapeRenderer.end();
-
-        Gdx.gl.glDisable(GL20.GL_BLEND);
-
-        // Draw text with effects
+        // Start drawing with SpriteBatch
         batch.begin();
 
-        // Use virtual viewport dimensions for consistent positioning
-        int screenWidth = VIEWPORT_WIDTH;
-        int screenHeight = VIEWPORT_HEIGHT;
+        // Draw background image
+        batch.draw(backgroundTexture, 0, 0, VIEWPORT_WIDTH, VIEWPORT_HEIGHT);
 
-        // Draw title with pulse effect
-        float titlePulse = 1.0f + MathUtils.sin(titlePulseTime * 2f) * 0.05f;
-        titleFont.getData().setScale(titleScale * titlePulse);
-
-        // Title positions
-        float titleY = screenHeight - 100;
-        float titleShadowOffset = 6;
-
-        // Title shadow
-        titleFont.setColor(SHADOW_COLOR);
-        titleFont.draw(batch, "MAZE SAHUR", titleShadowOffset, titleY + titleShadowOffset, screenWidth, Align.center, false);
-
-        // Title main
-        titleFont.setColor(TITLE_COLOR);
-        titleFont.draw(batch, "MAZE SAHUR", 0, titleY, screenWidth, Align.center, false);
-
-        // Subtitle
-        float subtitleY = screenHeight - 170;
-        subtitleFont.draw(batch, "A Horror Maze Experience",
-                0, subtitleY, screenWidth, Align.center, false);
-
-        // Draw button text with scaling
-        drawButtonText("PLAY", playButton, playScale);
-        drawButtonText("LOOT CRATES", lootCratesButton, lootCratesScale);
-        drawButtonText("SETTINGS", settingsButton, settingsScale);
-        drawButtonText("MULTIPLAYER", multiplayerButton, multiplayerScale);
-
-        // Draw footer text
-        subtitleFont.getData().setScale(0.9f);
-        subtitleFont.setColor(new Color(0.4f, 0.4f, 0.4f, 0.6f));
-        subtitleFont.draw(batch, "Created by Olivier, Luuk, Russell & Tim",
-                0, 30, screenWidth, Align.center, false);
-        subtitleFont.getData().setScale(subtitleScale);
+        // Draw button PNG images with hover scaling
+        drawButtonTexture(singleplayerTexture, playButton, playScale);
+        drawButtonTexture(lootcratesTexture, lootCratesButton, lootCratesScale);
+        drawButtonTexture(multiplayerTexture, multiplayerButton, multiplayerScale);
 
         batch.end();
+
+        Gdx.gl.glDisable(GL20.GL_BLEND);
 
         // Render multiplayer overlay last
         if (showMultiplayerForm) {
@@ -355,76 +315,26 @@ public class MenuScreen extends ScalableGameScreen {
     }
 
     /**
-     * Draws a button with shadow effect and scaling animation.
+     * Draws a button texture with scaling animation centered on the button position.
+     * Preserves the original aspect ratio of the texture.
      */
-    private void drawButtonWithShadow(Rectangle button, boolean hovered, float scale) {
+    private void drawButtonTexture(Texture texture, Rectangle button, float scale) {
         float centerX = button.x + button.width / 2f;
         float centerY = button.y + button.height / 2f;
-        float scaledWidth = button.width * scale;
-        float scaledHeight = button.height * scale;
+
+        // Use texture's original dimensions with base scale and hover scale
+        float originalWidth = texture.getWidth() * BUTTON_TEXTURE_SCALE;
+        float originalHeight = texture.getHeight() * BUTTON_TEXTURE_SCALE;
+
+        float scaledWidth = originalWidth * scale;
+        float scaledHeight = originalHeight * scale;
+
         float scaledX = centerX - scaledWidth / 2f;
         float scaledY = centerY - scaledHeight / 2f;
 
-        // Fixed shadow offset for virtual viewport
-        float shadowOffset = 5;
-
-        // Draw shadow
-        shapeRenderer.setColor(SHADOW_COLOR);
-        shapeRenderer.rect(scaledX + shadowOffset, scaledY - shadowOffset, scaledWidth, scaledHeight);
-
-        // Draw button
-        Color color = hovered ? BUTTON_HOVER_COLOR : BUTTON_COLOR;
-        shapeRenderer.setColor(color);
-        shapeRenderer.rect(scaledX, scaledY, scaledWidth, scaledHeight);
+        batch.draw(texture, scaledX, scaledY, scaledWidth, scaledHeight);
     }
 
-    /**
-     * Draws button border with glow effect on hover.
-     */
-    private void drawButtonBorder(Rectangle button, boolean hovered, float scale) {
-        float centerX = button.x + button.width / 2f;
-        float centerY = button.y + button.height / 2f;
-        float scaledWidth = button.width * scale;
-        float scaledHeight = button.height * scale;
-        float scaledX = centerX - scaledWidth / 2f;
-        float scaledY = centerY - scaledHeight / 2f;
-
-        Color borderColor = hovered ? BUTTON_BORDER_HOVER : BUTTON_BORDER_COLOR;
-        if (hovered) {
-            float glow = 0.5f + MathUtils.sin(animationTime * 5f) * 0.3f;
-            borderColor = new Color(BUTTON_BORDER_HOVER.r * glow,
-                    BUTTON_BORDER_HOVER.g * glow,
-                    BUTTON_BORDER_HOVER.b * glow, 1.0f);
-        }
-
-        shapeRenderer.setColor(borderColor);
-        shapeRenderer.rect(scaledX, scaledY, scaledWidth, scaledHeight);
-    }
-
-    /**
-     * Draws button text with proper alignment and scaling.
-     */
-    private void drawButtonText(String text, Rectangle button, float scale) {
-        float centerX = button.x + button.width / 2f;
-        float centerY = button.y + button.height / 2f;
-
-        buttonFont.getData().setScale(buttonFontScale * scale);
-        glyphLayout.setText(buttonFont, text);
-
-        float textX = centerX - glyphLayout.width / 2f;
-        float textY = centerY + glyphLayout.height / 2f;
-
-        // Fixed shadow offset for virtual viewport
-        float shadowOffset = 2;
-
-        // Text shadow
-        buttonFont.setColor(SHADOW_COLOR);
-        buttonFont.draw(batch, text, textX + shadowOffset, textY - shadowOffset);
-
-        // Text main
-        buttonFont.setColor(Color.WHITE);
-        buttonFont.draw(batch, text, textX, textY);
-    }
 
     private void openCharacterSelection(final String screenName, final Consumer<CharacterType> onSelected) {
         final CharacterSelectionScreen selectionScreen = new CharacterSelectionScreen(characterType -> {
@@ -455,15 +365,6 @@ public class MenuScreen extends ScalableGameScreen {
                 Gdx.graphics.setWindowedMode(1280, 720);
             });
         });
-    }
-
-    /**
-     * Called when the Settings button is clicked.
-     * Currently not implemented - placeholder for future settings menu.
-     */
-    private void onSettingsClicked() {
-        System.out.println("[MenuScreen] Settings button clicked (not yet implemented)");
-        // TODO: Implement settings menu
     }
 
     /**
@@ -687,6 +588,18 @@ public class MenuScreen extends ScalableGameScreen {
         }
         if (subtitleFont != null) {
             subtitleFont.dispose();
+        }
+        if (backgroundTexture != null) {
+            backgroundTexture.dispose();
+        }
+        if (singleplayerTexture != null) {
+            singleplayerTexture.dispose();
+        }
+        if (multiplayerTexture != null) {
+            multiplayerTexture.dispose();
+        }
+        if (lootcratesTexture != null) {
+            lootcratesTexture.dispose();
         }
     }
 }
