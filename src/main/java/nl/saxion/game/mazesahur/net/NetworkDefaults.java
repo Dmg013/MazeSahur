@@ -9,7 +9,7 @@ public final class NetworkDefaults {
     }
 
     public static String serverUrl() {
-            return System.getenv().getOrDefault("MAZE_SERVER_URL", "ws://45.94.80.147:27024/ws");
+            return System.getenv().getOrDefault("MAZE_SERVER_URL", "ws://ms.clyx.cloud/ws");
     }
 
     public static String room() {
