@@ -106,6 +106,17 @@ public class CharacterSelectionScreen extends ScalableGameScreen {
     private final Map<CharacterType, Float> previewFootOffsets = new HashMap<>();
     private Texture previewFallbackTexture;
 
+    // Button textures
+    private Texture backgroundTexture;
+    private Texture defaultButtonTexture;
+    private Texture lockdownButtonTexture;
+    private Texture maximilianButtonTexture;
+    private Texture soundcloudButtonTexture;
+    private Texture confirmButtonTexture;
+
+    // Button texture scale (to make them smaller, like MenuScreen)
+    private static final float BUTTON_TEXTURE_SCALE = 0.3f;
+
     public CharacterSelectionScreen(final Consumer<CharacterType> onCharacterSelected) {
         super(VIEWPORT_WIDTH, VIEWPORT_HEIGHT);
         this.onCharacterSelected = onCharacterSelected;
@@ -141,6 +152,14 @@ public class CharacterSelectionScreen extends ScalableGameScreen {
         smallFont.getData().setScale(1.2f);
         smallFont.setColor(TEXT_DIM);
 
+        // Load button textures
+        backgroundTexture = new Texture(Gdx.files.internal("img/Speler_selectie.png"));
+        defaultButtonTexture = new Texture(Gdx.files.internal("img/Default.png"));
+        lockdownButtonTexture = new Texture(Gdx.files.internal("img/Lockdown.png"));
+        maximilianButtonTexture = new Texture(Gdx.files.internal("img/Maximilian.png"));
+        soundcloudButtonTexture = new Texture(Gdx.files.internal("img/SoundCloud.png"));
+        confirmButtonTexture = new Texture(Gdx.files.internal("img/Confirm Selection.png"));
+
         initPreviewRenderer();
         initializeButtons();
         updateViewportTransform();
@@ -162,31 +181,54 @@ public class CharacterSelectionScreen extends ScalableGameScreen {
 
         characterButtons = new Rectangle[characters.length];
 
-        // Right panel takes up right half of screen
-        final int buttonWidth = 350;
-        final int buttonHeight = 70;
-        final int buttonSpacing = 15;
+        // Calculate button dimensions based on texture size
+        float btnWidth = 350;
+        float btnHeight = 70;
+        if (defaultButtonTexture != null) {
+            btnWidth = defaultButtonTexture.getWidth() * BUTTON_TEXTURE_SCALE;
+            btnHeight = defaultButtonTexture.getHeight() * BUTTON_TEXTURE_SCALE;
+        }
+
+        final float buttonSpacing = 80; // Spacing between buttons (for the bottom 3)
+
         // Center buttons in the right half of the screen
         final int rightPanelStart = screenWidth / 2;
-        final int rightPanelX = rightPanelStart + (screenWidth / 2 - buttonWidth) / 2;
+        final float rightPanelX = rightPanelStart + (screenWidth / 2f - btnWidth) / 2f - 70; // Moved 70px to the left
 
-        int startY = screenHeight / 2 + (characters.length * (buttonHeight + buttonSpacing)) / 2;
+        // Position buttons with consistent spacing
+        // First button (DEFAULT) - positioned very close to SOUNDCLOUD
+        characterButtons[0] = new Rectangle(
+            rightPanelX,
+            340 + 5, // Moved down by 20px (was 360, now 340)
+            btnWidth,
+            btnHeight
+        );
 
-        for (int i = 0; i < characters.length; i++) {
+        // Remaining buttons positioned with consistent spacing from button 2 onwards
+        float secondButtonY = 340; // Position for SOUNDCLOUD (moved down by 20px)
+        for (int i = 1; i < characters.length; i++) {
             characterButtons[i] = new Rectangle(
                 rightPanelX,
-                startY - i * (buttonHeight + buttonSpacing),
-                buttonWidth,
-                buttonHeight
+                secondButtonY - (i - 1) * buttonSpacing, // Consistent spacing from second button
+                btnWidth,
+                btnHeight
             );
+        }
+
+        // Select button dimensions
+        float selectBtnWidth = btnWidth;
+        float selectBtnHeight = btnHeight;
+        if (confirmButtonTexture != null) {
+            selectBtnWidth = confirmButtonTexture.getWidth() * BUTTON_TEXTURE_SCALE;
+            selectBtnHeight = confirmButtonTexture.getHeight() * BUTTON_TEXTURE_SCALE;
         }
 
         // Select button at bottom, centered in right half
         selectButton = new Rectangle(
-            rightPanelX,
-            100,
-            buttonWidth,
-            buttonHeight
+            rightPanelStart + (screenWidth / 2f - selectBtnWidth) / 2f - 75, // Moved slightly to the right
+            5, // Even lower on screen
+            selectBtnWidth,
+            selectBtnHeight
         );
     }
 
@@ -290,134 +332,115 @@ public class CharacterSelectionScreen extends ScalableGameScreen {
         Gdx.gl.glEnable(GL20.GL_BLEND);
         Gdx.gl.glBlendFunc(GL20.GL_SRC_ALPHA, GL20.GL_ONE_MINUS_SRC_ALPHA);
 
-        // GameApp uses drawText which sets up the camera correctly
-        // We'll piggyback on that by using GameApp's drawText for positioning
-
-        shapeRenderer.begin(ShapeRenderer.ShapeType.Filled);
-
-        // Draw character selection buttons
-        for (int i = 0; i < characterButtons.length; i++) {
-            final Rectangle button = characterButtons[i];
-            final CharacterType character = characters[i];
-            final boolean isLocked = !unlockManager.isUnlocked(character);
-            final boolean isHovered = button.contains(mouseX, mouseY) && !isLocked;
-            final boolean isSelected = i == selectedIndex;
-
-            Color bgColor = BUTTON_COLOR;
-            if (isLocked) {
-                bgColor = new Color(0.08f, 0.08f, 0.1f, 0.95f); // Darker for locked
-            } else if (isSelected) {
-                bgColor = BUTTON_HOVER_COLOR;
-            } else if (isHovered) {
-                bgColor = new Color(0.18f, 0.18f, 0.2f, 0.95f);
-            }
-
-            shapeRenderer.setColor(bgColor);
-            shapeRenderer.rect(button.x, button.y, button.width, button.height);
-        }
-
-        // Draw select button
-        final boolean selectHovered = selectButton.contains(mouseX, mouseY);
-        shapeRenderer.setColor(selectHovered ? BUTTON_HOVER_COLOR : BUTTON_COLOR);
-        shapeRenderer.rect(selectButton.x, selectButton.y, selectButton.width, selectButton.height);
-
-        shapeRenderer.end();
-
-        // Draw button borders
-        shapeRenderer.begin(ShapeRenderer.ShapeType.Line);
-        Gdx.gl.glLineWidth(3f);
-
-        for (int i = 0; i < characterButtons.length; i++) {
-            final Rectangle button = characterButtons[i];
-            final CharacterType character = characters[i];
-            final boolean isLocked = !unlockManager.isUnlocked(character);
-            final boolean isHovered = button.contains(mouseX, mouseY) && !isLocked;
-            final boolean isSelected = i == selectedIndex;
-
-            Color borderColor = BUTTON_BORDER_COLOR;
-            if (isLocked) {
-                borderColor = new Color(0.3f, 0.3f, 0.3f, 0.5f); // Gray for locked
-            } else if (isSelected || isHovered) {
-                borderColor = BUTTON_BORDER_HOVER;
-            }
-
-            shapeRenderer.setColor(borderColor);
-            shapeRenderer.rect(button.x, button.y, button.width, button.height);
-        }
-
-        // Select button border
-        shapeRenderer.setColor(selectHovered ? BUTTON_BORDER_HOVER : BUTTON_BORDER_COLOR);
-        shapeRenderer.rect(selectButton.x, selectButton.y, selectButton.width, selectButton.height);
-
-        shapeRenderer.end();
-
-        // Draw text using batch with same projection as shapes
+        // Start drawing with SpriteBatch
         batch.begin();
 
-        // Title at top
-        titleFont.setColor(TITLE_COLOR);
-        layout.setText(titleFont, "SELECT CHARACTER");
-        titleFont.draw(batch, layout, (screenWidth - layout.width) / 2f, screenHeight - 50);
+        // Draw background image
+        if (backgroundTexture != null) {
+            batch.draw(backgroundTexture, 0, 0, VIEWPORT_WIDTH, VIEWPORT_HEIGHT);
+        }
 
-        // Character names on buttons
+        // Calculate hover scales for character buttons and draw textures
         for (int i = 0; i < characterButtons.length; i++) {
             final Rectangle button = characterButtons[i];
             final CharacterType character = characters[i];
             final boolean isLocked = !unlockManager.isUnlocked(character);
+            final boolean isHovered = button.contains(mouseX, mouseY) && !isLocked;
             final boolean isSelected = i == selectedIndex;
 
-            if (isLocked) {
-                buttonFont.setColor(new Color(0.4f, 0.4f, 0.4f, 0.8f)); // Gray for locked
-                layout.setText(buttonFont, character.getDisplayName());
-                buttonFont.draw(batch, layout,
-                    button.x + (button.width - layout.width) / 2f,
-                    button.y + (button.height + layout.height) / 2f + 15);
+            // Base scale - adjust each button individually
+            float baseScale = 1.0f;
+            if (i == 2) { // Soundcloud (index 2 in enum)
+                baseScale = 1.10f;
+            } else if (i == 3) { // Lockdown (index 3 in enum)
+                baseScale = 1.05f;
+            } else if (i == 4) { // Maximilian (index 4 in enum)
+                baseScale = 1.15f;
+            }
 
-                // Draw LOCKED text
-                smallFont.setColor(new Color(0.6f, 0.1f, 0.1f, 0.8f)); // Red
+            // Calculate scale: 1.15f when hovered or selected, baseScale otherwise
+            float scale = (isSelected || isHovered) ? baseScale * 1.15f : baseScale;
+
+            // Dim locked characters
+            if (isLocked) {
+                batch.setColor(0.4f, 0.4f, 0.4f, 0.6f);
+                scale = baseScale * 0.95f;
+            } else {
+                batch.setColor(1f, 1f, 1f, 1f);
+            }
+
+            // Draw character button texture
+            final Texture texture = getCharacterTexture(character);
+            drawButtonTexture(texture, button, scale);
+
+            // Reset color
+            batch.setColor(1f, 1f, 1f, 1f);
+        }
+
+        // Draw select button with hover scaling
+        final boolean selectHovered = selectButton.contains(mouseX, mouseY);
+        final float selectScale = selectHovered ? 1.15f : 1.0f;
+        drawButtonTexture(confirmButtonTexture, selectButton, selectScale);
+
+        // Draw LOCKED overlay text for locked characters
+        for (int i = 0; i < characterButtons.length; i++) {
+            final Rectangle button = characterButtons[i];
+            final CharacterType character = characters[i];
+            final boolean isLocked = !unlockManager.isUnlocked(character);
+
+            if (isLocked) {
+                // Draw LOCKED text overlay
+                smallFont.setColor(new Color(0.8f, 0.1f, 0.1f, 0.9f)); // Red
                 layout.setText(smallFont, "LOCKED");
                 smallFont.draw(batch, layout,
-                    button.x + (button.width - layout.width) / 2f,
-                    button.y + (button.height + layout.height) / 2f - 15);
-            } else {
-                buttonFont.setColor(isSelected ? Color.WHITE : TEXT_COLOR);
-                layout.setText(buttonFont, character.getDisplayName());
-                buttonFont.draw(batch, layout,
                     button.x + (button.width - layout.width) / 2f,
                     button.y + (button.height + layout.height) / 2f);
             }
         }
 
-        // Select button text
-        buttonFont.setColor(Color.WHITE);
-        layout.setText(buttonFont, "CONFIRM SELECTION");
-        buttonFont.draw(batch, layout,
-            selectButton.x + (selectButton.width - layout.width) / 2f,
-            selectButton.y + (selectButton.height + layout.height) / 2f);
-
-        // Instructions at bottom
-        smallFont.setColor(TEXT_DIM);
-        final String instructions = "Arrow Keys or W/S to navigate  •  ENTER or Click to select";
-        layout.setText(smallFont, instructions);
-        smallFont.draw(batch, layout, (screenWidth - layout.width) / 2f, 40);
-
-        // Preview label on left side
-        titleFont.getData().setScale(2.0f);
-        titleFont.setColor(TITLE_COLOR);
-        final String previewLabel = "PREVIEW";
-        layout.setText(titleFont, previewLabel);
-        titleFont.draw(batch, layout, (screenWidth / 2f - layout.width) / 2f, screenHeight - 50);
-        titleFont.getData().setScale(3.5f); // Reset scale
-
-        // Show assets ready indicator
-        if (ResourceManager.getInstance().areAllAssetsLoaded()) {
-            smallFont.setColor(new Color(0.2f, 0.8f, 0.2f, 0.4f));
-            final String readyText = "✓ Assets loaded";
-            layout.setText(smallFont, readyText);
-            smallFont.draw(batch, layout, 20, screenHeight - 20);
-        }
-
         batch.end();
+    }
+
+    /**
+     * Draws a button texture with scaling animation centered on the button position.
+     * Preserves the original aspect ratio of the texture.
+     */
+    private void drawButtonTexture(final Texture texture, final Rectangle button, final float scale) {
+        if (texture == null) {
+            return;
+        }
+        final float centerX = button.x + button.width / 2f;
+        final float centerY = button.y + button.height / 2f;
+
+        // Use texture's original dimensions with base scale and hover scale
+        final float originalWidth = texture.getWidth() * BUTTON_TEXTURE_SCALE;
+        final float originalHeight = texture.getHeight() * BUTTON_TEXTURE_SCALE;
+
+        final float scaledWidth = originalWidth * scale;
+        final float scaledHeight = originalHeight * scale;
+
+        final float scaledX = centerX - scaledWidth / 2f;
+        final float scaledY = centerY - scaledHeight / 2f;
+
+        batch.draw(texture, scaledX, scaledY, scaledWidth, scaledHeight);
+    }
+
+    /**
+     * Gets the texture for a character button based on the character type.
+     */
+    private Texture getCharacterTexture(final CharacterType type) {
+        switch (type) {
+            case DEFAULT:
+                return defaultButtonTexture;
+            case SOUNDCLOUD:
+                return soundcloudButtonTexture;
+            case LOCKDOWN:
+                return lockdownButtonTexture;
+            case MAXIMILIAN:
+                return maximilianButtonTexture;
+            default:
+                return null;
+        }
     }
 
     private void initPreviewRenderer() {
@@ -773,6 +796,25 @@ public class CharacterSelectionScreen extends ScalableGameScreen {
         }
         if (previewBatch != null) {
             previewBatch.dispose();
+        }
+        // Dispose button textures
+        if (backgroundTexture != null) {
+            backgroundTexture.dispose();
+        }
+        if (defaultButtonTexture != null) {
+            defaultButtonTexture.dispose();
+        }
+        if (lockdownButtonTexture != null) {
+            lockdownButtonTexture.dispose();
+        }
+        if (maximilianButtonTexture != null) {
+            maximilianButtonTexture.dispose();
+        }
+        if (soundcloudButtonTexture != null) {
+            soundcloudButtonTexture.dispose();
+        }
+        if (confirmButtonTexture != null) {
+            confirmButtonTexture.dispose();
         }
         // NOTE: Don't dispose previewModels if they came from ResourceManager
         // Only dispose models we loaded ourselves (check if they're different from ResourceManager)
