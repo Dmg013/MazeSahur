@@ -67,7 +67,13 @@ public class CharacterSelectionScreen extends ScalableGameScreen {
     private static final Color TEXT_DIM = new Color(0.6f, 0.6f, 0.6f, 0.8f);
 
     private int selectedIndex = 0;
-    private final CharacterType[] characters = CharacterType.values();
+    // Only characters with button textures (BIG_BUSINESS has no texture)
+    private final CharacterType[] characters = {
+        CharacterType.DEFAULT,
+        CharacterType.SOUNDCLOUD,
+        CharacterType.LOCKDOWN,
+        CharacterType.MAXIMILIAN
+    };
     private boolean keyPressed = false;
     private CharacterType lastPreviewType = null;
     private float previewRotation = 0f;
@@ -181,35 +187,22 @@ public class CharacterSelectionScreen extends ScalableGameScreen {
 
         characterButtons = new Rectangle[characters.length];
 
-        // Calculate button dimensions based on texture size
-        float btnWidth = 350;
-        float btnHeight = 70;
-        if (defaultButtonTexture != null) {
-            btnWidth = defaultButtonTexture.getWidth() * BUTTON_TEXTURE_SCALE;
-            btnHeight = defaultButtonTexture.getHeight() * BUTTON_TEXTURE_SCALE;
-        }
+        // Fixed hitbox size for buttons (texture is drawn larger but hitbox is smaller)
+        float btnWidth = 320;
+        float btnHeight = 60;
 
-        final float buttonSpacing = 80; // Spacing between buttons (for the bottom 3)
+        final float buttonSpacing = 90; // Spacing between button hitboxes
 
         // Center buttons in the right half of the screen
         final int rightPanelStart = screenWidth / 2;
         final float rightPanelX = rightPanelStart + (screenWidth / 2f - btnWidth) / 2f - 70; // Moved 70px to the left
 
-        // Position buttons with consistent spacing
-        // First button (DEFAULT) - positioned very close to SOUNDCLOUD
-        characterButtons[0] = new Rectangle(
-            rightPanelX,
-            340 + 5, // Moved down by 20px (was 360, now 340)
-            btnWidth,
-            btnHeight
-        );
-
-        // Remaining buttons positioned with consistent spacing from button 2 onwards
-        float secondButtonY = 340; // Position for SOUNDCLOUD (moved down by 20px)
-        for (int i = 1; i < characters.length; i++) {
+        // Position all 4 buttons with consistent spacing from top to bottom
+        float topButtonY = 480;
+        for (int i = 0; i < characters.length; i++) {
             characterButtons[i] = new Rectangle(
                 rightPanelX,
-                secondButtonY - (i - 1) * buttonSpacing, // Consistent spacing from second button
+                topButtonY - i * buttonSpacing,
                 btnWidth,
                 btnHeight
             );
@@ -259,15 +252,16 @@ public class CharacterSelectionScreen extends ScalableGameScreen {
         final float mouseX = mousePos.x;
         final float mouseY = mousePos.y;
 
-        // Check character button hover/click
-        for (int i = 0; i < characterButtons.length; i++) {
-            if (characterButtons[i].contains(mouseX, mouseY)) {
-                final CharacterType character = characters[i];
-                final boolean isLocked = !unlockManager.isUnlocked(character);
-                if (!isLocked) {
-                    selectedIndex = i;
-                    if (Gdx.input.justTouched()) {
-                        selectCharacter();
+        // Check character button hover/click - only changes selection, doesn't start game
+        if (Gdx.input.justTouched()) {
+            for (int i = 0; i < characterButtons.length; i++) {
+                if (characterButtons[i].contains(mouseX, mouseY)) {
+                    final CharacterType character = characters[i];
+                    final boolean isLocked = !unlockManager.isUnlocked(character);
+                    if (!isLocked) {
+                        selectedIndex = i;
+                        System.out.println("[CharacterSelection] Selected: " + character.getDisplayName() + " (index " + i + ")");
+                        break; // Stop after first match
                     }
                 }
             }
@@ -345,22 +339,29 @@ public class CharacterSelectionScreen extends ScalableGameScreen {
             final Rectangle button = characterButtons[i];
             final CharacterType character = characters[i];
             final boolean isLocked = !unlockManager.isUnlocked(character);
-            final boolean isHovered = button.contains(mouseX, mouseY) && !isLocked;
+            // Smaller hover area - especially vertical (15% horizontal margin, 35% vertical margin)
+            final float hoverMarginX = button.width * 0.15f;
+            final float hoverMarginY = button.height * 0.35f;
+            final boolean isHovered = mouseX >= button.x + hoverMarginX
+                && mouseX <= button.x + button.width - hoverMarginX
+                && mouseY >= button.y + hoverMarginY
+                && mouseY <= button.y + button.height - hoverMarginY
+                && !isLocked;
             final boolean isSelected = i == selectedIndex;
 
-            // Base scale - adjust each button individually
+            // Base scale per character - Soundcloud and Lockdown are slightly smaller
             float baseScale = 1.0f;
-            if (i == 2) { // Soundcloud (index 2 in enum)
-                baseScale = 1.10f;
-            } else if (i == 3) { // Lockdown (index 3 in enum)
-                baseScale = 1.05f;
-            } else if (i == 4) { // Maximilian (index 4 in enum)
-                baseScale = 1.15f;
+            if (character == CharacterType.SOUNDCLOUD || character == CharacterType.LOCKDOWN) {
+                baseScale = 0.87f;
             }
 
-            // Calculate scale: 1.15f when hovered or selected, baseScale otherwise
-            // Locked characters keep the same size, only color changes
-            float scale = (isSelected || isHovered) ? baseScale * 1.15f : baseScale;
+            // Calculate scale: selected skin stays enlarged, hover adds slight extra scale
+            float scale = baseScale;
+            if (isSelected) {
+                scale = baseScale * 1.15f; // Selected skin is always enlarged
+            } else if (isHovered) {
+                scale = baseScale * 1.10f; // Hover is slightly smaller than selected
+            }
 
             // Dim locked characters (same size, just darker)
             if (isLocked) {

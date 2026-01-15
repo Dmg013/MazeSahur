@@ -28,7 +28,9 @@
       "Bash(src/main/resources/fbx-conv:*)",
       "Bash(../../../fbx-conv -f Idle.fbx)",
       "Bash(/Users/tim/Documents/GitHub/MazeSahur/src/main/resources/fbx-conv:*)",
-      "Bash(git checkout:*)"
+      "Bash(git checkout:*)",
+      "Bash(file:*)",
+      "Bash(sips:*)"
     ],
     "deny": [],
     "ask": []
