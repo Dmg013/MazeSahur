@@ -27,7 +27,8 @@
       "Bash(/tmp/fbx2gltf:*)",
       "Bash(src/main/resources/fbx-conv:*)",
       "Bash(../../../fbx-conv -f Idle.fbx)",
-      "Bash(/Users/tim/Documents/GitHub/MazeSahur/src/main/resources/fbx-conv:*)"
+      "Bash(/Users/tim/Documents/GitHub/MazeSahur/src/main/resources/fbx-conv:*)",
+      "Bash(git checkout:*)"
     ],
     "deny": [],
     "ask": []

@@ -441,7 +441,6 @@ public class MazeRenderer {
                 }
             }
             applyCharacterTextures(characterModel, Gdx.files.internal(basePath));
-            applyCharacterTextures(characterModel, Gdx.files.internal(basePath));
 
             // Calculate scale and offsets for this character
             final ModelInstance tempInstance = new ModelInstance(characterModel);
