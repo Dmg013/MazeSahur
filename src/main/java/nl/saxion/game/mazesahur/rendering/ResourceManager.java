@@ -243,6 +243,20 @@ public class ResourceManager {
                 Gdx.app.log("ResourceManager", "  Loaded audio: flashlight_toggle");
             }
 
+            FileHandle jumpscareSound = Gdx.files.internal("audio/Jumpscare Sound Effect.mp3");
+            if (jumpscareSound.exists()) {
+                sounds.put("jumpscare", Gdx.audio.newSound(jumpscareSound));
+                Gdx.app.log("ResourceManager", "  Loaded audio: jumpscare");
+            }
+
+            FileHandle laughterSound = Gdx.files.internal(
+                "audio/SCARY DEMONIC LAUGHTER  Horror Sound Effects  - FREE TO USE.mp3"
+            );
+            if (laughterSound.exists()) {
+                sounds.put("demonic_laughter", Gdx.audio.newSound(laughterSound));
+                Gdx.app.log("ResourceManager", "  Loaded audio: demonic_laughter");
+            }
+
             // Add more audio files here as needed
         } catch (Exception e) {
             Gdx.app.error("ResourceManager", "Failed to load audio", e);

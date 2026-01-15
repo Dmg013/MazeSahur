@@ -9,7 +9,9 @@ import com.badlogic.gdx.graphics.Texture;
 import com.badlogic.gdx.graphics.g2d.BitmapFont;
 import com.badlogic.gdx.graphics.g2d.SpriteBatch;
 import com.badlogic.gdx.graphics.glutils.ShapeRenderer;
+import com.badlogic.gdx.files.FileHandle;
 import com.badlogic.gdx.math.Vector3;
+import com.badlogic.gdx.math.Matrix4;
 import com.badlogic.gdx.utils.Align;
 import java.util.ArrayList;
 import java.util.List;
@@ -100,6 +102,11 @@ public class GameScreen extends ScalableGameScreen {
     private Sound whisperSound;
     private Sound rushSound;
     private Sound hallucinationSound;
+    private Sound demonicLaughterSound;
+    private long demonicLaughterSoundId = -1L;
+    private boolean demonicLaughterActive = false;
+    private float demonicLaughterTimer = 0f;
+    private float demonicLaughterIntervalTimer = 0f;
 
     // Level system
     private int currentLevel = 1;
@@ -121,6 +128,25 @@ public class GameScreen extends ScalableGameScreen {
     private ShapeRenderer loadingShapeRenderer;
     private BitmapFont loadingFont;
     private Texture loadingSplashImage;
+
+    // Proximity jumpscare
+    private static final float PROXIMITY_JUMPSCARE_DISTANCE = 50.0f;
+    private static final float PROXIMITY_JUMPSCARE_DURATION = 5.0f;
+    private static final float PROXIMITY_JUMPSCARE_COOLDOWN = 45.0f;
+    private static final float RANDOM_JUMPSCARE_INTERVAL = 160.0f;
+    private static final float RANDOM_JUMPSCARE_CHANCE = 1.0f;
+    private static final float DEMONIC_LAUGHTER_INTERVAL = 100.0f;
+    private static final float DEMONIC_LAUGHTER_DURATION = 7.0f;
+    private static final float PROXIMITY_JUMPSCARE_SLOW_MULTIPLIER = 0.2f;
+    private boolean proximityJumpscareActive = false;
+    private float proximityJumpscareTimer = 0f;
+    private float proximityJumpscareCooldown = 0f;
+    private float randomJumpscareTimer = 0f;
+    private SpriteBatch jumpscareBatch;
+    private Texture jumpscareBloodTexture;
+    private Texture jumpscareMonsterTexture;
+    private Sound jumpscareSound;
+    private final Matrix4 jumpscareProjection = new Matrix4();
 
     /**
      * Creates a new game screen with default settings.
@@ -291,6 +317,20 @@ public class GameScreen extends ScalableGameScreen {
         whisperSound = loadOptionalSound("audio/placeholder_whisper.wav");
         rushSound = loadOptionalSound("audio/placeholder_rush.wav");
         hallucinationSound = loadOptionalSound("audio/placeholder_shadow.wav");
+        jumpscareSound = ResourceManager.getInstance().getSound("jumpscare");
+        if (jumpscareSound == null) {
+            jumpscareSound = loadOptionalSound("audio/Jumpscare Sound Effect.mp3");
+        }
+        demonicLaughterSound = ResourceManager.getInstance().getSound("demonic_laughter");
+        if (demonicLaughterSound == null) {
+            demonicLaughterSound = loadOptionalSound(
+                "audio/SCARY DEMONIC LAUGHTER  Horror Sound Effects  - FREE TO USE.mp3"
+            );
+        }
+
+        jumpscareBloodTexture = loadOptionalTexture("img/Bloedbad.png");
+        jumpscareMonsterTexture = loadOptionalTexture("img/Engmonster.png");
+        jumpscareBatch = new SpriteBatch();
 
         // Capture cursor for FPS controls
         Gdx.input.setCursorCatched(true);
@@ -370,6 +410,8 @@ public class GameScreen extends ScalableGameScreen {
             }
 
             // Update game state
+            updateProximityJumpscare(delta);
+            updateDemonicLaughter(delta);
             handleInput(delta);
             player.update(delta, maze);
             if (!useNetworkEnemy) {
@@ -444,6 +486,10 @@ public class GameScreen extends ScalableGameScreen {
         if (!jumpscareActive) {
             gameUI.render(this, player, enemy, lightingManager, camera, remotePlayers,
                          showExitESP, exitPosition, yaw);
+        }
+
+        if (proximityJumpscareActive) {
+            renderProximityJumpscareOverlay();
         }
     }
 
@@ -818,6 +864,18 @@ public class GameScreen extends ScalableGameScreen {
         return null;
     }
 
+    private Texture loadOptionalTexture(final String path) {
+        try {
+            final FileHandle handle = Gdx.files.internal(path);
+            if (handle.exists()) {
+                return new Texture(handle);
+            }
+        } catch (Exception e) {
+            System.err.println("[GameScreen] Failed to load texture " + path + ": " + e.getMessage());
+        }
+        return null;
+    }
+
     /**
      * Applies latest authoritative state from the multiplayer session.
      */
@@ -932,6 +990,9 @@ public class GameScreen extends ScalableGameScreen {
         isDead = true;
         jumpscareActive = true;
         jumpscareTimer = 0f;
+        enemy.setSpeedMultiplier(1.0f);
+        proximityJumpscareActive = false;
+        proximityJumpscareTimer = 0f;
 
         System.out.println("[GameScreen] Player caught! Triggering jumpscare...");
 
@@ -1043,6 +1104,14 @@ public class GameScreen extends ScalableGameScreen {
         if (hallucinationSound != null) {
             hallucinationSound.dispose();
         }
+        stopDemonicLaughter();
+        if (demonicLaughterSound != null
+            && demonicLaughterSound != ResourceManager.getInstance().getSound("demonic_laughter")) {
+            demonicLaughterSound.dispose();
+        }
+        if (jumpscareSound != null && jumpscareSound != ResourceManager.getInstance().getSound("jumpscare")) {
+            jumpscareSound.dispose();
+        }
         if (loadingBatch != null) {
             loadingBatch.dispose();
             loadingBatch = null;
@@ -1058,6 +1127,18 @@ public class GameScreen extends ScalableGameScreen {
         if (loadingSplashImage != null) {
             loadingSplashImage.dispose();
             loadingSplashImage = null;
+        }
+        if (jumpscareBatch != null) {
+            jumpscareBatch.dispose();
+            jumpscareBatch = null;
+        }
+        if (jumpscareBloodTexture != null) {
+            jumpscareBloodTexture.dispose();
+            jumpscareBloodTexture = null;
+        }
+        if (jumpscareMonsterTexture != null) {
+            jumpscareMonsterTexture.dispose();
+            jumpscareMonsterTexture = null;
         }
     }
 
@@ -1150,6 +1231,130 @@ public class GameScreen extends ScalableGameScreen {
 
         // Simuleer server level change
         requestLevelChange(currentLevel, newSeed, 0, 0, 12f, 12f, true);
+    }
+
+    private void updateProximityJumpscare(final float delta) {
+        if (proximityJumpscareCooldown > 0f) {
+            proximityJumpscareCooldown = Math.max(0f, proximityJumpscareCooldown - delta);
+        }
+
+        if (proximityJumpscareActive) {
+            proximityJumpscareTimer += delta;
+            if (proximityJumpscareTimer >= PROXIMITY_JUMPSCARE_DURATION) {
+                proximityJumpscareActive = false;
+                proximityJumpscareTimer = 0f;
+                proximityJumpscareCooldown = PROXIMITY_JUMPSCARE_COOLDOWN;
+                enemy.setSpeedMultiplier(1.0f);
+            }
+            return;
+        }
+
+        if (proximityJumpscareCooldown > 0f || jumpscareActive || isDead) {
+            return;
+        }
+
+        randomJumpscareTimer += delta;
+        if (randomJumpscareTimer >= RANDOM_JUMPSCARE_INTERVAL) {
+            randomJumpscareTimer = 0f;
+            if (Math.random() < RANDOM_JUMPSCARE_CHANCE) {
+                triggerProximityJumpscare();
+                return;
+            }
+        }
+
+        final float distance = player.getPosition().dst(enemy.getPosition());
+        if (distance <= PROXIMITY_JUMPSCARE_DISTANCE && distance > enemy.getCatchRadius()) {
+            triggerProximityJumpscare();
+        }
+    }
+
+    private void updateDemonicLaughter(final float delta) {
+        if (isDead) {
+            stopDemonicLaughter();
+            return;
+        }
+
+        if (demonicLaughterActive) {
+            demonicLaughterTimer += delta;
+            if (demonicLaughterTimer >= DEMONIC_LAUGHTER_DURATION) {
+                stopDemonicLaughter();
+            }
+            return;
+        }
+
+        if (jumpscareActive || proximityJumpscareActive) {
+            return;
+        }
+
+        demonicLaughterIntervalTimer += delta;
+        if (demonicLaughterIntervalTimer >= DEMONIC_LAUGHTER_INTERVAL) {
+            demonicLaughterIntervalTimer = 0f;
+            if (demonicLaughterSound != null) {
+                demonicLaughterSoundId = demonicLaughterSound.play(1.0f);
+                demonicLaughterActive = true;
+                demonicLaughterTimer = 0f;
+            }
+        }
+    }
+
+    private void stopDemonicLaughter() {
+        if (demonicLaughterSound != null) {
+            if (demonicLaughterSoundId != -1L) {
+                demonicLaughterSound.stop(demonicLaughterSoundId);
+            } else {
+                demonicLaughterSound.stop();
+            }
+        }
+        demonicLaughterSoundId = -1L;
+        demonicLaughterActive = false;
+        demonicLaughterTimer = 0f;
+    }
+
+    private void triggerProximityJumpscare() {
+        proximityJumpscareActive = true;
+        proximityJumpscareTimer = 0f;
+        randomJumpscareTimer = 0f;
+        if (jumpscareSound != null) {
+            jumpscareSound.play(1.0f);
+        }
+        enemy.setSpeedMultiplier(PROXIMITY_JUMPSCARE_SLOW_MULTIPLIER);
+    }
+
+    private void renderProximityJumpscareOverlay() {
+        if (jumpscareBatch == null) {
+            return;
+        }
+        final int screenWidth = Gdx.graphics.getBackBufferWidth();
+        final int screenHeight = Gdx.graphics.getBackBufferHeight();
+        jumpscareProjection.setToOrtho2D(0, 0, screenWidth, screenHeight);
+        jumpscareBatch.setProjectionMatrix(jumpscareProjection);
+
+        final float fadeIn = Math.min(1.0f, proximityJumpscareTimer / 0.1f);
+        final float fadeOutStart = PROXIMITY_JUMPSCARE_DURATION - 0.2f;
+        final float fadeOut = proximityJumpscareTimer > fadeOutStart
+            ? Math.max(0.0f, (PROXIMITY_JUMPSCARE_DURATION - proximityJumpscareTimer) / 0.2f)
+            : 1.0f;
+        final float alpha = Math.min(fadeIn, fadeOut);
+
+        jumpscareBatch.begin();
+        if (jumpscareBloodTexture != null) {
+            jumpscareBatch.setColor(1f, 1f, 1f, alpha);
+            jumpscareBatch.draw(jumpscareBloodTexture, 0, 0, screenWidth, screenHeight);
+        }
+        if (jumpscareMonsterTexture != null) {
+            final float scale = Math.min(
+                (float) screenWidth / jumpscareMonsterTexture.getWidth(),
+                (float) screenHeight / jumpscareMonsterTexture.getHeight()
+            ) * 1.2f;
+            final float drawWidth = jumpscareMonsterTexture.getWidth() * scale;
+            final float drawHeight = jumpscareMonsterTexture.getHeight() * scale;
+            final float drawX = (screenWidth - drawWidth) / 2f;
+            final float drawY = (screenHeight - drawHeight) / 2f;
+            jumpscareBatch.setColor(1f, 1f, 1f, Math.min(1f, alpha + 0.1f));
+            jumpscareBatch.draw(jumpscareMonsterTexture, drawX, drawY, drawWidth, drawHeight);
+        }
+        jumpscareBatch.setColor(1f, 1f, 1f, 1f);
+        jumpscareBatch.end();
     }
 
     private void requestLevelChange(final int newLevel, final long newSeed,

@@ -21,6 +21,7 @@ import java.util.Random;
  * @version 1.0
  */
 public class Enemy {
+    private float speedMultiplier = 1.0f;
 
     /**
      * AI behavior states for the enemy.
@@ -368,7 +369,8 @@ public class Enemy {
         // The rail direction is only used for visual rotation
         final Vector3 moveDirection = new Vector3(dx / distance, 0, dz / distance);
         // Use faster speed when running (chasing)
-        final float speed = isRunning() ? GameConfig.ENEMY_SPEED_RUNNING : GameConfig.ENEMY_SPEED;
+        final float baseSpeed = isRunning() ? GameConfig.ENEMY_SPEED_RUNNING : GameConfig.ENEMY_SPEED;
+        final float speed = baseSpeed * speedMultiplier;
         final Vector3 movement = moveDirection.scl(speed * delta);
         final Vector3 newPosition = position.cpy().add(movement);
 
@@ -741,17 +743,18 @@ public class Enemy {
      * @return Animation speed multiplier (1.0 = normal speed)
      */
     public float getAnimationSpeedMultiplier() {
+        final float adjustedMultiplier = speedMultiplier;
         switch (currentState) {
             case WANDERING:
-                return GameConfig.ENEMY_ANIM_SPEED_WANDER;  // Slower, casual walk
+                return GameConfig.ENEMY_ANIM_SPEED_WANDER * adjustedMultiplier;  // Slower, casual walk
             case CHASING:
-                return GameConfig.ENEMY_ANIM_SPEED_CHASE;   // Faster, running
+                return GameConfig.ENEMY_ANIM_SPEED_CHASE * adjustedMultiplier;   // Faster, running
             case PURSUING:
-                return GameConfig.ENEMY_ANIM_SPEED_PURSUE;  // Medium, determined walk
+                return GameConfig.ENEMY_ANIM_SPEED_PURSUE * adjustedMultiplier;  // Medium, determined walk
             case PATHFINDING:
-                return GameConfig.ENEMY_ANIM_SPEED_PURSUE;
+                return GameConfig.ENEMY_ANIM_SPEED_PURSUE * adjustedMultiplier;
             default:
-                return 1.0f;
+                return 1.0f * adjustedMultiplier;
         }
     }
 
@@ -792,5 +795,13 @@ public class Enemy {
 
     public RailNetwork getRailNetwork() {
         return railNetwork;
+    }
+
+    public void setSpeedMultiplier(final float speedMultiplier) {
+        this.speedMultiplier = Math.max(0.05f, speedMultiplier);
+    }
+
+    public float getSpeedMultiplier() {
+        return speedMultiplier;
     }
 }
