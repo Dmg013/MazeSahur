@@ -42,8 +42,8 @@ public final class GameConfig {
     public static final float WALL_HEIGHT = 8f;
     
     // Enemy settings
-    public static final float ENEMY_SPEED = 4f;
-    public static final float ENEMY_SPEED_RUNNING = 15f;  // Faster speed when chasing
+    public static final float ENEMY_SPEED = 2f;
+    public static final float ENEMY_SPEED_RUNNING = 7f;  // Faster speed when chasing
     public static final float ENEMY_COLLISION_RADIUS = 3.5f;
     public static final float ENEMY_CATCH_RADIUS = 2.0f;
     public static final float ENEMY_HEIGHT = 0.5f;

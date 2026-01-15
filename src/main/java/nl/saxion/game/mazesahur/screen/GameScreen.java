@@ -323,8 +323,7 @@ public class GameScreen extends ScalableGameScreen {
         // Check for death condition
         if (!isDead) {
             survivalTime += delta;
-            // TEMPORARY: Death disabled for testing
-            // checkDeathCondition();
+            checkDeathCondition();
         }
 
         // Skip normal game logic if dead
@@ -1145,11 +1144,7 @@ public class GameScreen extends ScalableGameScreen {
     }
 
     private void handleSingleplayerLevelTransition() {
-        currentLevel++;
-        if (currentLevel > 5) {
-            currentLevel = 1;  // Loop terug naar level 1
-        }
-
+        currentLevel = 1;
         System.out.println("[GameScreen] Singleplayer level transition to " + currentLevel);
 
         // Nieuwe seed
