@@ -62,6 +62,8 @@ public class GameScreen extends ScalableGameScreen {
 
     // Audio
     private Sound flashlightToggleSound;
+    private Sound enemyProximitySound;
+    private long enemyProximitySoundId = -1L;
 
     // Camera control
     private float yaw;
@@ -166,6 +168,9 @@ public class GameScreen extends ScalableGameScreen {
     private static final float GLOBAL_EVENT_INTERVAL = 45.0f;
     private static final float GLOBAL_EVENT_START_DELAY = 10.0f;
     private static final float PROXIMITY_JUMPSCARE_SLOW_MULTIPLIER = 0.2f;
+    private static final float ENEMY_AUDIO_DISTANCE = 18.0f;
+    private static final float ENEMY_AUDIO_MIN_VOLUME = 0.1f;
+    private static final float ENEMY_AUDIO_MAX_VOLUME = 0.9f;
     private boolean proximityJumpscareActive = false;
     private float proximityJumpscareTimer = 0f;
     private float proximityJumpscareCooldown = 0f;
@@ -356,6 +361,10 @@ public class GameScreen extends ScalableGameScreen {
                 "audio/SCARY DEMONIC LAUGHTER  Horror Sound Effects  - FREE TO USE.mp3"
             );
         }
+        enemyProximitySound = ResourceManager.getInstance().getSound("sahur_proximity");
+        if (enemyProximitySound == null) {
+            enemyProximitySound = loadOptionalSound("audio/sahur.wav");
+        }
 
         jumpscareBloodTexture = loadOptionalTexture("img/Bloedbad.png");
         jumpscareMonsterTexture = loadOptionalTexture("img/Engmonster.png");
@@ -449,6 +458,7 @@ public class GameScreen extends ScalableGameScreen {
             if (!useNetworkEnemy) {
                 enemy.update(delta);
             }
+            updateEnemyProximityAudio();
             updateCamera();
 
             // Singleplayer exit check
@@ -1144,6 +1154,11 @@ public class GameScreen extends ScalableGameScreen {
         if (flashlightToggleSound != null && flashlightToggleSound != preloadedSound) {
             flashlightToggleSound.dispose();
         }
+        stopEnemyProximityAudio();
+        Sound preloadedEnemySound = ResourceManager.getInstance().getSound("sahur_proximity");
+        if (enemyProximitySound != null && enemyProximitySound != preloadedEnemySound) {
+            enemyProximitySound.dispose();
+        }
         if (whisperSound != null) {
             whisperSound.dispose();
         }
@@ -1281,6 +1296,35 @@ public class GameScreen extends ScalableGameScreen {
 
         // Simuleer server level change
         requestLevelChange(currentLevel, newSeed, 0, 0, 12f, 12f, true);
+    }
+
+    private void updateEnemyProximityAudio() {
+        if (enemyProximitySound == null || isDead || jumpscareActive) {
+            stopEnemyProximityAudio();
+            return;
+        }
+
+        final float distance = player.getPosition().dst(enemy.getPosition());
+        if (distance <= ENEMY_AUDIO_DISTANCE) {
+            final float proximity = Math.max(0f, 1f - (distance / ENEMY_AUDIO_DISTANCE));
+            final float volume = ENEMY_AUDIO_MIN_VOLUME
+                + (ENEMY_AUDIO_MAX_VOLUME - ENEMY_AUDIO_MIN_VOLUME) * proximity;
+
+            if (enemyProximitySoundId == -1L) {
+                enemyProximitySoundId = enemyProximitySound.loop(volume);
+            } else {
+                enemyProximitySound.setVolume(enemyProximitySoundId, volume);
+            }
+        } else {
+            stopEnemyProximityAudio();
+        }
+    }
+
+    private void stopEnemyProximityAudio() {
+        if (enemyProximitySound != null && enemyProximitySoundId != -1L) {
+            enemyProximitySound.stop(enemyProximitySoundId);
+            enemyProximitySoundId = -1L;
+        }
     }
 
     private void updateProximityJumpscare(final float delta) {
