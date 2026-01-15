@@ -5,7 +5,12 @@ import com.badlogic.gdx.Input;
 import com.badlogic.gdx.audio.Sound;
 import com.badlogic.gdx.graphics.GL20;
 import com.badlogic.gdx.graphics.PerspectiveCamera;
+import com.badlogic.gdx.graphics.Texture;
+import com.badlogic.gdx.graphics.g2d.BitmapFont;
+import com.badlogic.gdx.graphics.g2d.SpriteBatch;
+import com.badlogic.gdx.graphics.glutils.ShapeRenderer;
 import com.badlogic.gdx.math.Vector3;
+import com.badlogic.gdx.utils.Align;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Random;
@@ -101,6 +106,21 @@ public class GameScreen extends ScalableGameScreen {
     private Vector3 exitPosition = new Vector3();
     private boolean showExitMarker = true;
     private boolean showExitESP = false;
+
+    // Level loading screen (used for world transitions)
+    private static final int LOADING_BAR_WIDTH = 700;
+    private static final int LOADING_BAR_HEIGHT = 8;
+    private static final int LOADING_BAR_BOTTOM_MARGIN = 40;
+    private static final float LEVEL_LOADING_MIN_TIME = 0.6f;
+    private static final float LEVEL_LOADING_POST_TIME = 0.2f;
+    private boolean levelLoadingActive = false;
+    private boolean levelChangeApplied = false;
+    private float levelLoadingTimer = 0f;
+    private PendingLevelChange pendingLevelChange;
+    private SpriteBatch loadingBatch;
+    private ShapeRenderer loadingShapeRenderer;
+    private BitmapFont loadingFont;
+    private Texture loadingSplashImage;
 
     /**
      * Creates a new game screen with default settings.
@@ -314,6 +334,11 @@ public class GameScreen extends ScalableGameScreen {
 
     @Override
     public void render(final float delta) {
+        if (levelLoadingActive) {
+            renderLevelLoading(delta);
+            return;
+        }
+
         // Handle jumpscare sequence
         if (jumpscareActive) {
             handleJumpscare(delta);
@@ -1018,6 +1043,22 @@ public class GameScreen extends ScalableGameScreen {
         if (hallucinationSound != null) {
             hallucinationSound.dispose();
         }
+        if (loadingBatch != null) {
+            loadingBatch.dispose();
+            loadingBatch = null;
+        }
+        if (loadingShapeRenderer != null) {
+            loadingShapeRenderer.dispose();
+            loadingShapeRenderer = null;
+        }
+        if (loadingFont != null) {
+            loadingFont.dispose();
+            loadingFont = null;
+        }
+        if (loadingSplashImage != null) {
+            loadingSplashImage.dispose();
+            loadingSplashImage = null;
+        }
     }
 
     @Override
@@ -1040,53 +1081,7 @@ public class GameScreen extends ScalableGameScreen {
     private void handleLevelChange(final int newLevel, final long newSeed,
                                     final float exitX, final float exitZ,
                                     final float spawnX, final float spawnZ) {
-        System.out.println("[GameScreen] ====== LEVEL CHANGE TO LEVEL " + newLevel + " ======");
-
-        currentLevel = newLevel;
-
-        // Vernietig oude maze renderer
-        if (mazeRenderer != null) {
-            mazeRenderer.dispose();
-        }
-
-        // Genereer nieuwe maze
-        maze = new Maze(GameConfig.MAZE_SIZE, GameConfig.MAZE_SIZE, newSeed);
-        maze.generate();
-
-        // Herbouw renderer
-        mazeRenderer = new MazeRenderer(maze, materialManager, lightingManager);
-        mazeRenderer.initialize();
-
-        // Herlaad photo frames en boosts voor nieuwe level
-        photoFrames = createPhotoFramesOnWalls();
-        mazeRenderer.loadPhotoFrames(photoFrames);
-
-        boosts = createBoostPickups();
-        mazeRenderer.loadBoosts(boosts);
-
-        // Update exit positie
-        exitPosition.set(exitX, GameConfig.PLAYER_HEIGHT, exitZ);
-
-        // Reset speler positie
-        player.getPosition().set(spawnX, GameConfig.PLAYER_HEIGHT, spawnZ);
-
-        // Recreate enemy with new maze (Enemy has final Maze reference)
-        enemy = new Enemy(maze, player);
-        enemy.initialize();
-
-        // Recreate event manager with new maze and enemy
-        eventManager = new EventManager(
-            maze,
-            player,
-            enemy,
-            lightingManager,
-            networked,
-            whisperSound,
-            rushSound,
-            hallucinationSound
-        );
-
-        System.out.println("[GameScreen] Level change complete!");
+        requestLevelChange(newLevel, newSeed, exitX, exitZ, spawnX, spawnZ, false);
     }
 
     /**
@@ -1154,9 +1149,154 @@ public class GameScreen extends ScalableGameScreen {
         final long newSeed = System.currentTimeMillis() ^ currentLevel;
 
         // Simuleer server level change
-        handleLevelChange(currentLevel, newSeed, 0, 0, 12f, 12f);
+        requestLevelChange(currentLevel, newSeed, 0, 0, 12f, 12f, true);
+    }
 
-        // Exit opnieuw vinden (omdat handleLevelChange niet automatisch doet voor SP)
-        findExitLocation();
+    private void requestLevelChange(final int newLevel, final long newSeed,
+                                    final float exitX, final float exitZ,
+                                    final float spawnX, final float spawnZ,
+                                    final boolean recalcExit) {
+        pendingLevelChange = new PendingLevelChange(
+            newLevel,
+            newSeed,
+            exitX,
+            exitZ,
+            spawnX,
+            spawnZ,
+            recalcExit
+        );
+        levelLoadingActive = true;
+        levelChangeApplied = false;
+        levelLoadingTimer = 0f;
+        ensureLoadingResources();
+    }
+
+    private void applyLevelChange(final PendingLevelChange change) {
+        System.out.println("[GameScreen] ====== LEVEL CHANGE TO LEVEL " + change.newLevel + " ======");
+
+        currentLevel = change.newLevel;
+
+        // Vernietig oude maze renderer
+        if (mazeRenderer != null) {
+            mazeRenderer.dispose();
+        }
+
+        // Genereer nieuwe maze
+        maze = new Maze(GameConfig.MAZE_SIZE, GameConfig.MAZE_SIZE, change.newSeed);
+        maze.generate();
+
+        // Herbouw renderer
+        mazeRenderer = new MazeRenderer(maze, materialManager, lightingManager);
+        mazeRenderer.initialize();
+
+        // Herlaad photo frames en boosts voor nieuwe level
+        photoFrames = createPhotoFramesOnWalls();
+        mazeRenderer.loadPhotoFrames(photoFrames);
+
+        boosts = createBoostPickups();
+        mazeRenderer.loadBoosts(boosts);
+
+        // Update exit positie
+        exitPosition.set(change.exitX, GameConfig.PLAYER_HEIGHT, change.exitZ);
+
+        // Reset speler positie
+        player.getPosition().set(change.spawnX, GameConfig.PLAYER_HEIGHT, change.spawnZ);
+
+        // Recreate enemy with new maze (Enemy has final Maze reference)
+        enemy = new Enemy(maze, player);
+        enemy.initialize();
+
+        // Recreate event manager with new maze and enemy
+        eventManager = new EventManager(
+            maze,
+            player,
+            enemy,
+            lightingManager,
+            networked,
+            whisperSound,
+            rushSound,
+            hallucinationSound
+        );
+
+        if (change.recalcExit) {
+            findExitLocation();
+        }
+
+        System.out.println("[GameScreen] Level change complete!");
+    }
+
+    private void renderLevelLoading(final float delta) {
+        levelLoadingTimer += delta;
+
+        if (!levelChangeApplied && levelLoadingTimer >= LEVEL_LOADING_MIN_TIME) {
+            applyLevelChange(pendingLevelChange);
+            levelChangeApplied = true;
+            levelLoadingTimer = 0f;
+        } else if (levelChangeApplied && levelLoadingTimer >= LEVEL_LOADING_POST_TIME) {
+            levelLoadingActive = false;
+            levelChangeApplied = false;
+            pendingLevelChange = null;
+        }
+
+        Gdx.gl.glClearColor(0.0f, 0.0f, 0.0f, 1.0f);
+        Gdx.gl.glClear(GL20.GL_COLOR_BUFFER_BIT);
+
+        final int screenWidth = Gdx.graphics.getWidth();
+        final int screenHeight = Gdx.graphics.getHeight();
+
+        loadingBatch.begin();
+        loadingBatch.draw(loadingSplashImage, 0, 0, screenWidth, screenHeight);
+        loadingBatch.end();
+
+        final int barX = (screenWidth - LOADING_BAR_WIDTH) / 2;
+        final int barY = LOADING_BAR_BOTTOM_MARGIN;
+        final float progress = levelChangeApplied ? 1.0f : 0.4f;
+
+        loadingShapeRenderer.begin(ShapeRenderer.ShapeType.Filled);
+        loadingShapeRenderer.setColor(0.2f, 0.2f, 0.2f, 1.0f);
+        loadingShapeRenderer.rect(barX, barY, LOADING_BAR_WIDTH, LOADING_BAR_HEIGHT);
+        loadingShapeRenderer.setColor(1.0f, 1.0f, 1.0f, 1.0f);
+        loadingShapeRenderer.rect(barX, barY, LOADING_BAR_WIDTH * progress, LOADING_BAR_HEIGHT);
+        loadingShapeRenderer.end();
+
+        loadingBatch.begin();
+        loadingFont.setColor(1f, 1f, 1f, 1f);
+        final int textY = barY + LOADING_BAR_HEIGHT + 25;
+        loadingFont.draw(loadingBatch, "Loading world...", 0, textY, screenWidth, Align.center, false);
+        loadingBatch.end();
+    }
+
+    private void ensureLoadingResources() {
+        if (loadingBatch != null) {
+            return;
+        }
+        loadingBatch = new SpriteBatch();
+        loadingShapeRenderer = new ShapeRenderer();
+        loadingFont = new BitmapFont();
+        loadingFont.getData().setScale(1.2f);
+        loadingSplashImage = new Texture(Gdx.files.internal("img/splash.png"));
+    }
+
+    private static final class PendingLevelChange {
+        private final int newLevel;
+        private final long newSeed;
+        private final float exitX;
+        private final float exitZ;
+        private final float spawnX;
+        private final float spawnZ;
+        private final boolean recalcExit;
+
+        private PendingLevelChange(final int newLevel, final long newSeed,
+                                   final float exitX, final float exitZ,
+                                   final float spawnX, final float spawnZ,
+                                   final boolean recalcExit) {
+            this.newLevel = newLevel;
+            this.newSeed = newSeed;
+            this.exitX = exitX;
+            this.exitZ = exitZ;
+            this.spawnX = spawnX;
+            this.spawnZ = spawnZ;
+            this.recalcExit = recalcExit;
+        }
     }
 }

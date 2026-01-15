@@ -125,15 +125,17 @@ public class DeathScreen extends ScalableGameScreen {
     private void restart() {
         System.out.println("[DeathScreen] Restarting game...");
 
-        // Create new game screen
-        final GameScreen newGameScreen = new GameScreen();
-
-        // Initialize the new game screen
-        newGameScreen.show();
-
-        // Register and switch to new game screen (GameApp handles disposing old screen)
-        GameApp.addScreen("MazeGame", newGameScreen);
-        GameApp.switchScreen("MazeGame");
+        final LoadingScreen loadingScreen = new LoadingScreen(
+            "Loading world...",
+            () -> {
+                final GameScreen newGameScreen = new GameScreen();
+                newGameScreen.show();
+                GameApp.addScreen("MazeGame", newGameScreen);
+            },
+            () -> GameApp.switchScreen("MazeGame")
+        );
+        GameApp.addScreen("LoadingGameRestart", loadingScreen);
+        GameApp.switchScreen("LoadingGameRestart");
     }
 
     @Override

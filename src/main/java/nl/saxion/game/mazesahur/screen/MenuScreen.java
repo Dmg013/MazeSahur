@@ -22,6 +22,7 @@ import nl.saxion.game.mazesahur.net.NetworkDefaults;
 import nl.saxion.game.mazesahur.net.NetworkSessionConfig;
 import nl.saxion.gameapp.GameApp;
 import nl.saxion.gameapp.screens.ScalableGameScreen;
+import nl.saxion.game.mazesahur.screen.LoadingScreen;
 
 /**
  * Main menu screen with Play, Settings, and Multiplayer buttons.
@@ -354,16 +355,19 @@ public class MenuScreen extends ScalableGameScreen {
         System.out.println("[MenuScreen] Play button clicked - Starting game...");
 
         openCharacterSelection("CharacterSelectSingleplayer", selectedCharacter -> {
-            final GameScreen gameScreen = new GameScreen(null, null, selectedCharacter);
-            GameApp.addScreen("Game", gameScreen);
-
-            // Switch to game screen first, then resize window
-            GameApp.switchScreen("Game");
-
-            // Resize window after screen switch (post to next frame)
-            Gdx.app.postRunnable(() -> {
-                Gdx.graphics.setWindowedMode(1280, 720);
-            });
+            final LoadingScreen loadingScreen = new LoadingScreen(
+                "Loading world...",
+                () -> {
+                    final GameScreen gameScreen = new GameScreen(null, null, selectedCharacter);
+                    GameApp.addScreen("Game", gameScreen);
+                },
+                () -> {
+                    GameApp.switchScreen("Game");
+                    Gdx.graphics.setWindowedMode(1280, 720);
+                }
+            );
+            GameApp.addScreen("LoadingGame", loadingScreen);
+            GameApp.switchScreen("LoadingGame");
         });
     }
 
@@ -406,16 +410,19 @@ public class MenuScreen extends ScalableGameScreen {
                 return;
             }
 
-            final GameScreen gameScreen = new GameScreen(session.getSeed(), session, selectedCharacter);
-            GameApp.addScreen("Game", gameScreen);
-
-            // Switch to game screen first, then resize window
-            GameApp.switchScreen("Game");
-
-            // Resize window after screen switch (post to next frame)
-            Gdx.app.postRunnable(() -> {
-                Gdx.graphics.setWindowedMode(1280, 720);
-            });
+            final LoadingScreen loadingScreen = new LoadingScreen(
+                "Loading world...",
+                () -> {
+                    final GameScreen gameScreen = new GameScreen(session.getSeed(), session, selectedCharacter);
+                    GameApp.addScreen("Game", gameScreen);
+                },
+                () -> {
+                    GameApp.switchScreen("Game");
+                    Gdx.graphics.setWindowedMode(1280, 720);
+                }
+            );
+            GameApp.addScreen("LoadingGameMultiplayer", loadingScreen);
+            GameApp.switchScreen("LoadingGameMultiplayer");
         });
     }
 
