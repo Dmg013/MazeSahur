@@ -46,7 +46,7 @@ public class Room {
     private float exitCooldown = 0f;
     private static final float EXIT_TRIGGER_RADIUS = 2.5f;
     private static final float EXIT_COOLDOWN_DURATION = 3.0f;
-    private static final int MAX_LEVELS = 5;
+    private static final int MAX_LEVELS = 1;
 
     public Room(final String roomId, final long seed, final ObjectMapper mapper) {
         this.roomId = roomId;
