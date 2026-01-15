@@ -265,6 +265,7 @@ public class GameScreen extends ScalableGameScreen {
             findExitLocation();
         }
 
+
         System.out.println("[GameScreen] Using maze seed: " + seed + " networked=" + networked
             + " character=" + localCharacterType.name());
     }
@@ -805,6 +806,7 @@ public class GameScreen extends ScalableGameScreen {
 
         return boostList;
     }
+
 
     /**
      * Checks collision with maze walls using circular collision detection.
@@ -1642,6 +1644,7 @@ public class GameScreen extends ScalableGameScreen {
 
         // Update exit positie
         exitPosition.set(change.exitX, GameConfig.PLAYER_HEIGHT, change.exitZ);
+
 
         // Reset speler positie
         player.getPosition().set(change.spawnX, GameConfig.PLAYER_HEIGHT, change.spawnZ);

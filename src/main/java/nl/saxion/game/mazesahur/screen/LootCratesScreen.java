@@ -4,6 +4,7 @@ import com.badlogic.gdx.Gdx;
 import com.badlogic.gdx.Input;
 import com.badlogic.gdx.graphics.Color;
 import com.badlogic.gdx.graphics.GL20;
+import com.badlogic.gdx.graphics.Texture;
 import com.badlogic.gdx.graphics.g2d.BitmapFont;
 import com.badlogic.gdx.graphics.g2d.GlyphLayout;
 import com.badlogic.gdx.graphics.g2d.SpriteBatch;
@@ -50,6 +51,14 @@ public class LootCratesScreen extends ScalableGameScreen {
     private String message = "";
     private float messageTimer = 0f;
 
+    // Textures
+    private Texture backgroundTexture;
+    private Texture greenCrateTexture;
+    private Texture purpleCrateTexture;
+    private Texture goldCrateTexture;
+    private Texture titleTexture;
+    private Texture coinTexture;
+
     public LootCratesScreen() {
         super(VIEWPORT_WIDTH, VIEWPORT_HEIGHT);
     }
@@ -63,26 +72,37 @@ public class LootCratesScreen extends ScalableGameScreen {
         titleFont = new BitmapFont();
         titleFont.getData().setScale(4.0f);
         titleFont.setColor(TITLE_COLOR);
+        titleFont.getRegion().getTexture().setFilter(Texture.TextureFilter.Linear, Texture.TextureFilter.Linear);
 
         buttonFont = new BitmapFont();
-        buttonFont.getData().setScale(2.0f);
+        buttonFont.getData().setScale(2.5f);
         buttonFont.setColor(TEXT_COLOR);
+        buttonFont.getRegion().getTexture().setFilter(Texture.TextureFilter.Linear, Texture.TextureFilter.Linear);
 
         smallFont = new BitmapFont();
         smallFont.getData().setScale(1.3f);
         smallFont.setColor(TEXT_DIM);
+        smallFont.getRegion().getTexture().setFilter(Texture.TextureFilter.Linear, Texture.TextureFilter.Linear);
+
+        // Load textures
+        backgroundTexture = new Texture(Gdx.files.internal("img/Backgroundl.png"));
+        greenCrateTexture = new Texture(Gdx.files.internal("img/groen.png"));
+        purpleCrateTexture = new Texture(Gdx.files.internal("img/paars.png"));
+        goldCrateTexture = new Texture(Gdx.files.internal("img/Gold.png"));
+        titleTexture = new Texture(Gdx.files.internal("img/Lood_crates.png"));
+        coinTexture = new Texture(Gdx.files.internal("img/coin.png"));
 
         // Initialize managers
         currencyManager = new CurrencyManager();
         unlockManager = new UnlockManager();
         crateService = new CrateOpeningService(unlockManager, currencyManager);
 
-        // Initialize buttons
-        int buttonWidth = 300;
-        int buttonHeight = 120;
-        int spacing = 40;
+        // Initialize buttons (sized to match crate images)
+        int buttonWidth = 400;
+        int buttonHeight = 400;
+        int spacing = 20;
         int startX = (VIEWPORT_WIDTH - (buttonWidth * 3 + spacing * 2)) / 2;
-        int buttonY = VIEWPORT_HEIGHT / 2;
+        int buttonY = VIEWPORT_HEIGHT / 2 - 200;
 
         basicCrateButton = new Rectangle(startX, buttonY, buttonWidth, buttonHeight);
         premiumCrateButton = new Rectangle(startX + buttonWidth + spacing, buttonY, buttonWidth, buttonHeight);
@@ -144,49 +164,74 @@ public class LootCratesScreen extends ScalableGameScreen {
         Gdx.gl.glEnable(GL20.GL_BLEND);
         Gdx.gl.glBlendFunc(GL20.GL_SRC_ALPHA, GL20.GL_ONE_MINUS_SRC_ALPHA);
 
-        // Draw buttons
+        // Draw background
+        batch.begin();
+        batch.draw(backgroundTexture, 0, 0, VIEWPORT_WIDTH, VIEWPORT_HEIGHT);
+        batch.end();
+
+        // Draw crate images
+        batch.begin();
+
+        // Calculate crate image sizes (larger)
+        int crateWidth = 380;
+        int crateHeight = 380;
+
+        // Green crate (Basic - 100 coins)
+        float greenScale = basicHovered ? 1.08f : 1.0f;
+        int greenW = (int)(crateWidth * greenScale);
+        int greenH = (int)(crateHeight * greenScale);
+        int greenX = (int)(basicCrateButton.x + (basicCrateButton.width - greenW) / 2);
+        int greenY = (int)(basicCrateButton.y + (basicCrateButton.height - greenH) / 2);
+        batch.draw(greenCrateTexture, greenX, greenY, greenW, greenH);
+
+        // Purple crate (Premium - 250 coins)
+        float purpleScale = premiumHovered ? 1.08f : 1.0f;
+        int purpleW = (int)(crateWidth * purpleScale);
+        int purpleH = (int)(crateHeight * purpleScale);
+        int purpleX = (int)(premiumCrateButton.x + (premiumCrateButton.width - purpleW) / 2);
+        int purpleY = (int)(premiumCrateButton.y + (premiumCrateButton.height - purpleH) / 2);
+        batch.draw(purpleCrateTexture, purpleX, purpleY, purpleW, purpleH);
+
+        // Gold crate (Elite - 500 coins)
+        float goldScale = eliteHovered ? 1.08f : 1.0f;
+        int goldW = (int)(crateWidth * goldScale);
+        int goldH = (int)(crateHeight * goldScale);
+        int goldX = (int)(eliteCrateButton.x + (eliteCrateButton.width - goldW) / 2);
+        int goldY = (int)(eliteCrateButton.y + (eliteCrateButton.height - goldH) / 2);
+        batch.draw(goldCrateTexture, goldX, goldY, goldW, goldH);
+
+        batch.end();
+
+        // Draw back button
         shapeRenderer.begin(ShapeRenderer.ShapeType.Filled);
-
-        drawCrateButton(basicCrateButton, basicHovered, CrateType.BASIC);
-        drawCrateButton(premiumCrateButton, premiumHovered, CrateType.PREMIUM);
-        drawCrateButton(eliteCrateButton, eliteHovered, CrateType.ELITE);
-
         shapeRenderer.setColor(backHovered ? BUTTON_HOVER_COLOR : BUTTON_COLOR);
         shapeRenderer.rect(backButton.x, backButton.y, backButton.width, backButton.height);
-
         shapeRenderer.end();
 
-        // Draw borders
+        // Draw back button border
         shapeRenderer.begin(ShapeRenderer.ShapeType.Line);
         Gdx.gl.glLineWidth(3f);
-
-        drawCrateBorder(basicCrateButton, basicHovered);
-        drawCrateBorder(premiumCrateButton, premiumHovered);
-        drawCrateBorder(eliteCrateButton, eliteHovered);
-
         shapeRenderer.setColor(backHovered ? BUTTON_BORDER_HOVER : BUTTON_BORDER_COLOR);
         shapeRenderer.rect(backButton.x, backButton.y, backButton.width, backButton.height);
-
         shapeRenderer.end();
 
         // Draw text
         batch.begin();
 
-        // Title
-        titleFont.setColor(TITLE_COLOR);
-        layout.setText(titleFont, "LOOT CRATES");
-        titleFont.draw(batch, layout, (VIEWPORT_WIDTH - layout.width) / 2, VIEWPORT_HEIGHT - 60);
+        // Title image
+        int titleWidth = 650;
+        int titleHeight = 320;
+        batch.draw(titleTexture, (VIEWPORT_WIDTH - titleWidth) / 2, VIEWPORT_HEIGHT - titleHeight, titleWidth, titleHeight);
 
-        // Coin balance (large and centered)
+        // Coin balance (top left corner) - image + number
+        int coinImgWidth = 80;
+        int coinImgHeight = 50;
+        batch.draw(coinTexture, 25, VIEWPORT_HEIGHT - coinImgHeight - 25, coinImgWidth, coinImgHeight);
         buttonFont.setColor(COIN_COLOR);
-        String coinText = "COINS: " + currencyManager.getBalance();
+        String coinText = "" + currencyManager.getBalance();
         layout.setText(buttonFont, coinText);
-        buttonFont.draw(batch, layout, (VIEWPORT_WIDTH - layout.width) / 2, VIEWPORT_HEIGHT - 140);
+        buttonFont.draw(batch, layout, 100, VIEWPORT_HEIGHT - 35);
 
-        // Crate labels and costs
-        drawCrateText(basicCrateButton, "BASIC CRATE", CrateType.BASIC.getCost());
-        drawCrateText(premiumCrateButton, "PREMIUM CRATE", CrateType.PREMIUM.getCost());
-        drawCrateText(eliteCrateButton, "ELITE CRATE", CrateType.ELITE.getCost());
 
         // Back button
         buttonFont.setColor(Color.WHITE);
@@ -242,19 +287,21 @@ public class LootCratesScreen extends ScalableGameScreen {
     }
 
     private void drawCrateText(Rectangle button, String name, int cost) {
+        // Draw crate name at top
         buttonFont.setColor(TEXT_COLOR);
         layout.setText(buttonFont, name);
         buttonFont.draw(batch, layout,
             button.x + (button.width - layout.width) / 2,
-            button.y + button.height - 30);
+            button.y + button.height - 10);
 
+        // Draw cost at bottom
         boolean canAfford = currencyManager.getBalance() >= cost;
         smallFont.setColor(canAfford ? COIN_COLOR : new Color(0.6f, 0.1f, 0.1f, 0.8f));
         String costText = cost + " COINS";
         layout.setText(smallFont, costText);
         smallFont.draw(batch, layout,
             button.x + (button.width - layout.width) / 2,
-            button.y + 40);
+            button.y + 50);
     }
 
     private void openCrate(CrateType type) {
@@ -288,5 +335,11 @@ public class LootCratesScreen extends ScalableGameScreen {
         if (titleFont != null) titleFont.dispose();
         if (buttonFont != null) buttonFont.dispose();
         if (smallFont != null) smallFont.dispose();
+        if (backgroundTexture != null) backgroundTexture.dispose();
+        if (greenCrateTexture != null) greenCrateTexture.dispose();
+        if (purpleCrateTexture != null) purpleCrateTexture.dispose();
+        if (goldCrateTexture != null) goldCrateTexture.dispose();
+        if (titleTexture != null) titleTexture.dispose();
+        if (coinTexture != null) coinTexture.dispose();
     }
 }

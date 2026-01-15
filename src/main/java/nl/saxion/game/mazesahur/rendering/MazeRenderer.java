@@ -83,6 +83,7 @@ public class MazeRenderer {
     // Exit marker for level transitions
     private Model exitMarkerModel;
     private ModelInstance exitMarkerInstance;
+    private float exitMarkerScale = 1.0f;
 
     private ModelInstance floorInstance;
     private ModelInstance roofInstance;
@@ -1830,18 +1831,17 @@ public class MazeRenderer {
                 VertexAttributes.Usage.Position | VertexAttributes.Usage.Normal
             );
             exitMarkerInstance = new ModelInstance(exitMarkerModel);
+            exitMarkerScale = 1.0f;
+        }
+
+        if (exitMarkerInstance == null) {
+            return;
         }
 
         // Positioneer en render
-        exitMarkerInstance.transform.setToTranslation(exitPosition);
-
-        // Animatie: floating effect
-        final float time = System.currentTimeMillis() / 1000f;
-        final float bobHeight = (float) Math.sin(time * 2.0) * 0.3f;
-        exitMarkerInstance.transform.translate(0, bobHeight, 0);
-
-        // Rotatie animatie
-        exitMarkerInstance.transform.rotate(Vector3.Y, time * 30f);
+        exitMarkerInstance.transform.idt();
+        exitMarkerInstance.transform.scale(exitMarkerScale, exitMarkerScale, exitMarkerScale);
+        exitMarkerInstance.transform.translate(exitPosition.x, 0f, exitPosition.z);
 
         modelBatch.begin(camera);
         modelBatch.render(exitMarkerInstance, enemyEnvironment);
