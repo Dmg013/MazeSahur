@@ -20,6 +20,8 @@ public class LightingManager {
     private final Vector3 spotDirection = new Vector3(0, 0, -1);
     private float baseIntensity = GameConfig.FLASHLIGHT_INTENSITY;
     private float intensityMultiplier = 1f;
+    private final Vector3 defaultFlashlightColor = new Vector3(1.4f, 1.4f, 1.35f);
+    private final Vector3 flashlightColor = new Vector3(1.4f, 1.4f, 1.35f);
 
     // Bobbing effect
     private float bobbingTime = 0f;
@@ -51,6 +53,7 @@ public class LightingManager {
         }
 
         shader.setEnabled(true);
+        shader.setSpotColor(flashlightColor);
 
         // Update bobbing
         if (isMoving) {
@@ -125,6 +128,14 @@ public class LightingManager {
      */
     public void setIntensityMultiplier(final float multiplier) {
         this.intensityMultiplier = multiplier;
+    }
+
+    public void setFlashlightColor(final Vector3 color) {
+        this.flashlightColor.set(color);
+    }
+
+    public void resetFlashlightColor() {
+        this.flashlightColor.set(defaultFlashlightColor);
     }
 
     /**

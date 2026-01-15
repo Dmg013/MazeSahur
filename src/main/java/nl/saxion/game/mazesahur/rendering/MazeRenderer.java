@@ -92,6 +92,7 @@ public class MazeRenderer {
     private List<ModelInstance> ceilingLampInstances;
     private List<Vector3> lampLightPositions;
     private List<Boolean> lampIsBroken; // Track which lamps are completely broken
+    private Vector3 lampColorOverride;
     private ModelInstance elevatorInstance;
     private List<ModelInstance> photoFrameInstances;
     private List<ModelInstance> boostInstances;
@@ -858,6 +859,16 @@ public class MazeRenderer {
                 // Use current flicker intensity (scaled up for visibility)
                 lampLight.intensity = lampFlickerIntensities[i] * 12f;
             }
+            if (lampColorOverride != null) {
+                lampLight.color.set(new Color(
+                    lampColorOverride.x,
+                    lampColorOverride.y,
+                    lampColorOverride.z,
+                    1.0f
+                ));
+            } else {
+                lampLight.color.set(new Color(1.0f, 0.85f, 0.5f, 1.0f));
+            }
         }
     }
 
@@ -884,7 +895,11 @@ public class MazeRenderer {
 
         for (int i = 0; i < numLights; i++) {
             positions[i] = lampLightPositions.get(i);
-            colors[i] = new Vector3(1.0f, 0.85f, 0.5f); // Warm yellow
+            if (lampColorOverride != null) {
+                colors[i] = new Vector3(lampColorOverride);
+            } else {
+                colors[i] = new Vector3(1.0f, 0.85f, 0.5f); // Warm yellow
+            }
 
             // Check if this lamp is completely broken
             if (lampIsBroken.get(i)) {
@@ -942,6 +957,16 @@ public class MazeRenderer {
         }
 
         lightingManager.getShader().setPointLights(positions, colors, intensities, numLights);
+    }
+
+    public void setLampColorOverride(final Vector3 color) {
+        if (color == null) {
+            lampColorOverride = null;
+        } else if (lampColorOverride == null) {
+            lampColorOverride = new Vector3(color);
+        } else {
+            lampColorOverride.set(color);
+        }
     }
 
     /**

@@ -329,6 +329,13 @@ public class SpotlightShader implements Shader {
     }
 
     /**
+     * Sets the flashlight color.
+     */
+    public void setSpotColor(final Vector3 color) {
+        this.spotColor.set(color);
+    }
+
+    /**
      * Sets whether the flashlight is enabled.
      */
     public void setEnabled(boolean enabled) {
@@ -397,4 +404,3 @@ public class SpotlightShader implements Shader {
         }
     }
 }
-

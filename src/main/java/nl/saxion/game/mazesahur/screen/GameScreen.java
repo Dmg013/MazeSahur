@@ -107,6 +107,18 @@ public class GameScreen extends ScalableGameScreen {
     private boolean demonicLaughterActive = false;
     private float demonicLaughterTimer = 0f;
     private float demonicLaughterIntervalTimer = 0f;
+    private float demonicLaughterFlashToggleTimer = 0f;
+    private boolean randomFlickerActive = false;
+    private float randomFlickerTimer = 0f;
+    private float randomFlickerCheckTimer = 0f;
+    private boolean redFlickerActive = false;
+    private float redFlickerTimer = 0f;
+    private float redFlickerWindowTimer = 0f;
+    private float redFlickerTriggerAt = 0f;
+    private float redFlickerStartDelayTimer = 0f;
+    private boolean redFlickerScheduled = false;
+    private float globalEventTimer = 0f;
+    private float globalEventStartDelayTimer = 0f;
 
     // Level system
     private int currentLevel = 1;
@@ -135,8 +147,24 @@ public class GameScreen extends ScalableGameScreen {
     private static final float PROXIMITY_JUMPSCARE_COOLDOWN = 45.0f;
     private static final float RANDOM_JUMPSCARE_INTERVAL = 160.0f;
     private static final float RANDOM_JUMPSCARE_CHANCE = 1.0f;
-    private static final float DEMONIC_LAUGHTER_INTERVAL = 100.0f;
+    private static final float DEMONIC_LAUGHTER_CHECK_INTERVAL = 1.0f;
+    private static final float DEMONIC_LAUGHTER_CHANCE_PER_CHECK = 2.0f / 120.0f;
     private static final float DEMONIC_LAUGHTER_DURATION = 7.0f;
+    private static final float DEMONIC_LAUGHTER_FLICKER_DURATION = 1.0f;
+    private static final float DEMONIC_LAUGHTER_FLICKER_INTERVAL = 0.12f;
+    private static final float DEMONIC_LAUGHTER_BLACKOUT_DURATION = 5.0f;
+    private static final float RANDOM_FLICKER_CHECK_INTERVAL = 1.0f;
+    private static final float RANDOM_FLICKER_CHANCE_PER_CHECK = 1.0f / 60.0f;
+    private static final float RANDOM_FLICKER_DURATION = 5.0f;
+    private static final float RANDOM_FLICKER_INTERVAL = 0.12f;
+    private static final float RED_FLICKER_DURATION = 10.0f;
+    private static final float RED_FLICKER_WINDOW = 120.0f;
+    private static final float RED_FLICKER_START_DELAY = 10.0f;
+    private static final float RED_FLICKER_INTERVAL = 0.12f;
+    private static final Vector3 RED_FLICKER_COLOR_BRIGHT = new Vector3(2.0f, 0.2f, 0.2f);
+    private static final Vector3 RED_FLICKER_COLOR_DIM = new Vector3(0.9f, 0.15f, 0.15f);
+    private static final float GLOBAL_EVENT_INTERVAL = 45.0f;
+    private static final float GLOBAL_EVENT_START_DELAY = 10.0f;
     private static final float PROXIMITY_JUMPSCARE_SLOW_MULTIPLIER = 0.2f;
     private boolean proximityJumpscareActive = false;
     private float proximityJumpscareTimer = 0f;
@@ -410,8 +438,11 @@ public class GameScreen extends ScalableGameScreen {
             }
 
             // Update game state
+            updateGlobalEventScheduler(delta);
             updateProximityJumpscare(delta);
             updateDemonicLaughter(delta);
+            updateRandomFlashlightFlicker(delta);
+            updateRedFlicker(delta);
             handleInput(delta);
             player.update(delta, maze);
             if (!useNetworkEnemy) {
@@ -491,6 +522,7 @@ public class GameScreen extends ScalableGameScreen {
         if (proximityJumpscareActive) {
             renderProximityJumpscareOverlay();
         }
+
     }
 
     /**
@@ -830,6 +862,21 @@ public class GameScreen extends ScalableGameScreen {
             }
         }
 
+        // Debug: trigger demonic laughter
+        if (Gdx.input.isKeyJustPressed(Input.Keys.L)) {
+            triggerDemonicLaughter();
+        }
+
+        // Debug: trigger random flashlight flicker
+        if (Gdx.input.isKeyJustPressed(Input.Keys.K)) {
+            triggerRandomFlashlightFlicker();
+        }
+
+        // Debug: trigger red flicker
+        if (Gdx.input.isKeyJustPressed(Input.Keys.O)) {
+            triggerRedFlicker();
+        }
+
         // Toggle rail network visualization (debug)
         if (Gdx.input.isKeyJustPressed(Input.Keys.R)) {
             showRailNetwork = !showRailNetwork;
@@ -1104,6 +1151,7 @@ public class GameScreen extends ScalableGameScreen {
         if (hallucinationSound != null) {
             hallucinationSound.dispose();
         }
+        stopRandomFlashlightFlicker();
         stopDemonicLaughter();
         if (demonicLaughterSound != null
             && demonicLaughterSound != ResourceManager.getInstance().getSound("demonic_laughter")) {
@@ -1276,6 +1324,22 @@ public class GameScreen extends ScalableGameScreen {
 
         if (demonicLaughterActive) {
             demonicLaughterTimer += delta;
+            demonicLaughterFlashToggleTimer += delta;
+
+            if (demonicLaughterTimer < DEMONIC_LAUGHTER_FLICKER_DURATION) {
+                if (demonicLaughterFlashToggleTimer >= DEMONIC_LAUGHTER_FLICKER_INTERVAL) {
+                    demonicLaughterFlashToggleTimer = 0f;
+                }
+                final boolean flashlightOn = (int) (demonicLaughterTimer
+                    / DEMONIC_LAUGHTER_FLICKER_INTERVAL) % 2 == 0;
+                lightingManager.setFlashlightSuppressed(!flashlightOn);
+            } else if (demonicLaughterTimer
+                < DEMONIC_LAUGHTER_FLICKER_DURATION + DEMONIC_LAUGHTER_BLACKOUT_DURATION) {
+                lightingManager.setFlashlightSuppressed(true);
+            } else {
+                lightingManager.setFlashlightSuppressed(false);
+            }
+
             if (demonicLaughterTimer >= DEMONIC_LAUGHTER_DURATION) {
                 stopDemonicLaughter();
             }
@@ -1287,17 +1351,82 @@ public class GameScreen extends ScalableGameScreen {
         }
 
         demonicLaughterIntervalTimer += delta;
-        if (demonicLaughterIntervalTimer >= DEMONIC_LAUGHTER_INTERVAL) {
+        if (demonicLaughterIntervalTimer >= DEMONIC_LAUGHTER_CHECK_INTERVAL) {
             demonicLaughterIntervalTimer = 0f;
-            if (demonicLaughterSound != null) {
-                demonicLaughterSoundId = demonicLaughterSound.play(1.0f);
-                demonicLaughterActive = true;
-                demonicLaughterTimer = 0f;
+            if (Math.random() < DEMONIC_LAUGHTER_CHANCE_PER_CHECK) {
+                triggerDemonicLaughter();
             }
         }
     }
 
+    private void updateGlobalEventScheduler(final float delta) {
+        if (isDead) {
+            return;
+        }
+
+        if (globalEventStartDelayTimer < GLOBAL_EVENT_START_DELAY) {
+            globalEventStartDelayTimer += delta;
+            return;
+        }
+
+        globalEventTimer += delta;
+        if (globalEventTimer < GLOBAL_EVENT_INTERVAL) {
+            return;
+        }
+
+        if (!canTriggerGlobalEvent()) {
+            return;
+        }
+
+        triggerRandomGlobalEvent();
+        globalEventTimer = 0f;
+    }
+
+    private boolean canTriggerGlobalEvent() {
+        return !jumpscareActive
+            && !proximityJumpscareActive
+            && !demonicLaughterActive
+            && !randomFlickerActive
+            && !redFlickerActive;
+    }
+
+    private void triggerRandomGlobalEvent() {
+        final int choice = (int) (Math.random() * 4);
+        switch (choice) {
+            case 0:
+                triggerProximityJumpscare();
+                break;
+            case 1:
+                triggerDemonicLaughter();
+                break;
+            case 2:
+                triggerRandomFlashlightFlicker();
+                break;
+            case 3:
+            default:
+                triggerRedFlicker();
+                break;
+        }
+    }
+
+    private void markEventTriggered() {
+        globalEventTimer = 0f;
+    }
+
+    private void triggerDemonicLaughter() {
+        if (demonicLaughterSound == null || demonicLaughterActive) {
+            return;
+        }
+        demonicLaughterSoundId = demonicLaughterSound.play(1.0f);
+        demonicLaughterActive = true;
+        demonicLaughterTimer = 0f;
+        demonicLaughterFlashToggleTimer = 0f;
+        demonicLaughterIntervalTimer = 0f;
+        markEventTriggered();
+    }
+
     private void stopDemonicLaughter() {
+        lightingManager.setFlashlightSuppressed(false);
         if (demonicLaughterSound != null) {
             if (demonicLaughterSoundId != -1L) {
                 demonicLaughterSound.stop(demonicLaughterSoundId);
@@ -1308,6 +1437,115 @@ public class GameScreen extends ScalableGameScreen {
         demonicLaughterSoundId = -1L;
         demonicLaughterActive = false;
         demonicLaughterTimer = 0f;
+        demonicLaughterFlashToggleTimer = 0f;
+    }
+
+    private void updateRandomFlashlightFlicker(final float delta) {
+        if (isDead) {
+            stopRandomFlashlightFlicker();
+            return;
+        }
+
+        if (randomFlickerActive) {
+            randomFlickerTimer += delta;
+            final boolean flashlightOn = (int) (randomFlickerTimer / RANDOM_FLICKER_INTERVAL) % 2 == 0;
+            lightingManager.setFlashlightSuppressed(!flashlightOn);
+            if (randomFlickerTimer >= RANDOM_FLICKER_DURATION) {
+                stopRandomFlashlightFlicker();
+            }
+            return;
+        }
+
+        if (jumpscareActive || proximityJumpscareActive || demonicLaughterActive) {
+            return;
+        }
+
+        randomFlickerCheckTimer += delta;
+        if (randomFlickerCheckTimer >= RANDOM_FLICKER_CHECK_INTERVAL) {
+            randomFlickerCheckTimer = 0f;
+            if (Math.random() < RANDOM_FLICKER_CHANCE_PER_CHECK) {
+                triggerRandomFlashlightFlicker();
+            }
+        }
+    }
+
+    private void triggerRandomFlashlightFlicker() {
+        if (randomFlickerActive) {
+            return;
+        }
+        randomFlickerActive = true;
+        randomFlickerTimer = 0f;
+        randomFlickerCheckTimer = 0f;
+        markEventTriggered();
+    }
+
+    private void stopRandomFlashlightFlicker() {
+        lightingManager.setFlashlightSuppressed(false);
+        randomFlickerActive = false;
+        randomFlickerTimer = 0f;
+    }
+
+    private void updateRedFlicker(final float delta) {
+        if (isDead) {
+            stopRedFlicker();
+            return;
+        }
+
+        if (redFlickerStartDelayTimer < RED_FLICKER_START_DELAY) {
+            redFlickerStartDelayTimer += delta;
+            return;
+        }
+
+        if (redFlickerActive) {
+            redFlickerTimer += delta;
+            final boolean bright = (int) (redFlickerTimer / RED_FLICKER_INTERVAL) % 2 == 0;
+            if (bright) {
+                lightingManager.setFlashlightColor(RED_FLICKER_COLOR_BRIGHT);
+                mazeRenderer.setLampColorOverride(RED_FLICKER_COLOR_BRIGHT);
+            } else {
+                lightingManager.setFlashlightColor(RED_FLICKER_COLOR_DIM);
+                mazeRenderer.setLampColorOverride(RED_FLICKER_COLOR_DIM);
+            }
+            if (redFlickerTimer >= RED_FLICKER_DURATION) {
+                stopRedFlicker();
+                redFlickerWindowTimer = 0f;
+                redFlickerTriggerAt = (float) (Math.random() * RED_FLICKER_WINDOW);
+                redFlickerScheduled = true;
+            }
+            return;
+        }
+
+        if (jumpscareActive || proximityJumpscareActive || demonicLaughterActive || randomFlickerActive) {
+            return;
+        }
+
+        redFlickerWindowTimer += delta;
+        if (!redFlickerScheduled) {
+            redFlickerTriggerAt = (float) (Math.random() * RED_FLICKER_WINDOW);
+            redFlickerScheduled = true;
+        }
+
+        if (redFlickerWindowTimer >= redFlickerTriggerAt || redFlickerWindowTimer >= RED_FLICKER_WINDOW) {
+            triggerRedFlicker();
+        }
+    }
+
+    private void triggerRedFlicker() {
+        if (redFlickerActive) {
+            return;
+        }
+        redFlickerActive = true;
+        redFlickerTimer = 0f;
+        redFlickerScheduled = false;
+        redFlickerWindowTimer = 0f;
+        markEventTriggered();
+    }
+
+    private void stopRedFlicker() {
+        redFlickerActive = false;
+        redFlickerTimer = 0f;
+        lightingManager.resetFlashlightColor();
+        mazeRenderer.setLampColorOverride(null);
     }
 
     private void triggerProximityJumpscare() {
@@ -1318,6 +1556,7 @@ public class GameScreen extends ScalableGameScreen {
             jumpscareSound.play(1.0f);
         }
         enemy.setSpeedMultiplier(PROXIMITY_JUMPSCARE_SLOW_MULTIPLIER);
+        markEventTriggered();
     }
 
     private void renderProximityJumpscareOverlay() {
