@@ -359,12 +359,12 @@ public class CharacterSelectionScreen extends ScalableGameScreen {
             }
 
             // Calculate scale: 1.15f when hovered or selected, baseScale otherwise
+            // Locked characters keep the same size, only color changes
             float scale = (isSelected || isHovered) ? baseScale * 1.15f : baseScale;
 
-            // Dim locked characters
+            // Dim locked characters (same size, just darker)
             if (isLocked) {
                 batch.setColor(0.4f, 0.4f, 0.4f, 0.6f);
-                scale = baseScale * 0.95f;
             } else {
                 batch.setColor(1f, 1f, 1f, 1f);
             }

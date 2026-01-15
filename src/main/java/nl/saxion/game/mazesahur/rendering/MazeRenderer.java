@@ -1970,5 +1970,15 @@ public class MazeRenderer {
         if (espShapeRenderer != null) {
             espShapeRenderer.dispose();
         }
+        // Dispose character models
+        for (Model model : characterModels.values()) {
+            if (model != null) {
+                model.dispose();
+            }
+        }
+        characterModels.clear();
+        characterScales.clear();
+        characterFootOffsets.clear();
+        characterRootTranslations.clear();
     }
 }

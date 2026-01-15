@@ -999,7 +999,10 @@ public class GameScreen extends ScalableGameScreen {
         Gdx.input.setCursorCatched(false);
         gameUI.dispose();
         mazeRenderer.dispose();
-        materialManager.dispose();
+        // Only dispose materialManager if we created it ourselves (not from ResourceManager)
+        if (materialManager != ResourceManager.getInstance().getMaterialManager()) {
+            materialManager.dispose();
+        }
         lightingManager.dispose();
         // Only dispose flashlight sound if we loaded it ourselves (not from ResourceManager)
         Sound preloadedSound = ResourceManager.getInstance().getSound("flashlight_toggle");
