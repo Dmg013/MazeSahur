@@ -257,6 +257,12 @@ public class ResourceManager {
                 Gdx.app.log("ResourceManager", "  Loaded audio: demonic_laughter");
             }
 
+            FileHandle sahurSound = Gdx.files.internal("audio/sahur.wav");
+            if (sahurSound.exists()) {
+                sounds.put("sahur_proximity", Gdx.audio.newSound(sahurSound));
+                Gdx.app.log("ResourceManager", "  Loaded audio: sahur_proximity");
+            }
+
             // Add more audio files here as needed
         } catch (Exception e) {
             Gdx.app.error("ResourceManager", "Failed to load audio", e);
