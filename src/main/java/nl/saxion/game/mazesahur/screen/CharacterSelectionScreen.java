@@ -383,22 +383,6 @@ public class CharacterSelectionScreen extends ScalableGameScreen {
         final float selectScale = selectHovered ? 1.15f : 1.0f;
         drawButtonTexture(confirmButtonTexture, selectButton, selectScale);
 
-        // Draw LOCKED overlay text for locked characters
-        for (int i = 0; i < characterButtons.length; i++) {
-            final Rectangle button = characterButtons[i];
-            final CharacterType character = characters[i];
-            final boolean isLocked = !unlockManager.isUnlocked(character);
-
-            if (isLocked) {
-                // Draw LOCKED text overlay
-                smallFont.setColor(new Color(0.8f, 0.1f, 0.1f, 0.9f)); // Red
-                layout.setText(smallFont, "LOCKED");
-                smallFont.draw(batch, layout,
-                    button.x + (button.width - layout.width) / 2f,
-                    button.y + (button.height + layout.height) / 2f);
-            }
-        }
-
         batch.end();
     }
 
