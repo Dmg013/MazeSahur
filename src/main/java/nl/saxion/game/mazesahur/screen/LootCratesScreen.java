@@ -9,7 +9,9 @@ import com.badlogic.gdx.graphics.g2d.BitmapFont;
 import com.badlogic.gdx.graphics.g2d.GlyphLayout;
 import com.badlogic.gdx.graphics.g2d.SpriteBatch;
 import com.badlogic.gdx.graphics.glutils.ShapeRenderer;
+import com.badlogic.gdx.math.Matrix4;
 import com.badlogic.gdx.math.Rectangle;
+import com.badlogic.gdx.math.Vector2;
 import nl.saxion.game.mazesahur.model.*;
 import nl.saxion.gameapp.GameApp;
 import nl.saxion.gameapp.screens.ScalableGameScreen;
@@ -21,6 +23,13 @@ public class LootCratesScreen extends ScalableGameScreen {
 
     private static final int VIEWPORT_WIDTH = 1280;
     private static final int VIEWPORT_HEIGHT = 720;
+    private final Matrix4 uiProjection = new Matrix4();
+    private final Vector2 mouseBuffer = new Vector2();
+    private float viewportScale = 1f;
+    private float viewportWidth = VIEWPORT_WIDTH;
+    private float viewportHeight = VIEWPORT_HEIGHT;
+    private float viewportX = 0f;
+    private float viewportY = 0f;
 
     // Colors matching MenuScreen
     private static final Color BUTTON_COLOR = new Color(0.12f, 0.12f, 0.15f, 0.95f);
@@ -110,12 +119,14 @@ public class LootCratesScreen extends ScalableGameScreen {
 
         backButton = new Rectangle(40, 40, 150, 60);
 
+        updateViewportTransform();
         System.out.println("[LootCratesScreen] Initialized");
     }
 
     @Override
     public void render(float delta) {
         super.render(delta);
+        updateViewportTransform();
 
         // Update message timer
         if (messageTimer > 0) {
@@ -135,11 +146,16 @@ public class LootCratesScreen extends ScalableGameScreen {
         }
 
         // Clear screen
+        Gdx.gl.glViewport(0, 0, Gdx.graphics.getBackBufferWidth(), Gdx.graphics.getBackBufferHeight());
         Gdx.gl.glClearColor(0.0f, 0.0f, 0.0f, 1.0f);
         Gdx.gl.glClear(GL20.GL_COLOR_BUFFER_BIT);
+        Gdx.gl.glViewport((int) viewportX, (int) viewportY, (int) viewportWidth, (int) viewportHeight);
+        batch.setProjectionMatrix(uiProjection);
+        shapeRenderer.setProjectionMatrix(uiProjection);
 
-        int mouseX = Gdx.input.getX();
-        int mouseY = VIEWPORT_HEIGHT - Gdx.input.getY();
+        final Vector2 mousePos = getMouseInViewport();
+        final int mouseX = (int) mousePos.x;
+        final int mouseY = (int) mousePos.y;
 
         boolean basicHovered = basicCrateButton.contains(mouseX, mouseY);
         boolean premiumHovered = premiumCrateButton.contains(mouseX, mouseY);
@@ -321,6 +337,34 @@ public class LootCratesScreen extends ScalableGameScreen {
     private void showMessage(String msg) {
         message = msg;
         messageTimer = 3.0f;
+    }
+
+    private void updateViewportTransform() {
+        final float windowWidth = Gdx.graphics.getWidth();
+        final float windowHeight = Gdx.graphics.getHeight();
+        final float scaleX = windowWidth / VIEWPORT_WIDTH;
+        final float scaleY = windowHeight / VIEWPORT_HEIGHT;
+        viewportScale = Math.min(scaleX, scaleY);
+        viewportWidth = VIEWPORT_WIDTH * viewportScale;
+        viewportHeight = VIEWPORT_HEIGHT * viewportScale;
+        viewportX = (windowWidth - viewportWidth) / 2f;
+        viewportY = (windowHeight - viewportHeight) / 2f;
+
+        uiProjection.setToOrtho2D(0f, 0f, VIEWPORT_WIDTH, VIEWPORT_HEIGHT);
+        if (batch != null) {
+            batch.setProjectionMatrix(uiProjection);
+        }
+        if (shapeRenderer != null) {
+            shapeRenderer.setProjectionMatrix(uiProjection);
+        }
+    }
+
+    private Vector2 getMouseInViewport() {
+        final float screenX = Gdx.input.getX();
+        final float screenY = Gdx.input.getY();
+        final float virtualX = (screenX - viewportX) / viewportScale;
+        final float virtualY = (Gdx.graphics.getHeight() - screenY - viewportY) / viewportScale;
+        return mouseBuffer.set(virtualX, virtualY);
     }
 
     @Override

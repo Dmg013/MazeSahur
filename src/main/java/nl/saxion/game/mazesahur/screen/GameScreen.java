@@ -127,6 +127,7 @@ public class GameScreen extends ScalableGameScreen {
     private Vector3 exitPosition = new Vector3();
     private boolean showExitMarker = true;
     private boolean showExitESP = false;
+    private boolean returnToMenuQueued = false;
 
     // Level loading screen (used for world transitions)
     private static final int LOADING_BAR_WIDTH = 700;
@@ -277,6 +278,9 @@ public class GameScreen extends ScalableGameScreen {
 
     @Override
     public void show() {
+        if (!Gdx.graphics.isFullscreen()) {
+            Gdx.graphics.setFullscreenMode(Gdx.graphics.getDisplayMode());
+        }
         // Prevent double-initialization (happens when switching from splash)
         if (initialized) {
             System.out.println("[GameScreen] Already initialized, updating viewport...");
@@ -1284,8 +1288,20 @@ public class GameScreen extends ScalableGameScreen {
         final float distSquared = dx * dx + dz * dz;
 
         if (distSquared < 2.5f * 2.5f) {
-            handleSingleplayerLevelTransition();
+            returnToMenuAfterWin();
         }
+    }
+
+    private void returnToMenuAfterWin() {
+        if (returnToMenuQueued) {
+            return;
+        }
+        returnToMenuQueued = true;
+        System.out.println("[GameScreen] Level gehaald, terug naar menu");
+        Gdx.app.postRunnable(() -> {
+            GameApp.switchScreen("Menu");
+            Gdx.graphics.setFullscreenMode(Gdx.graphics.getDisplayMode());
+        });
     }
 
     private void handleSingleplayerLevelTransition() {

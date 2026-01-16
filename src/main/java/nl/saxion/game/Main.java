@@ -31,7 +31,7 @@ public final class Main {
 
         // GameScreen will be loaded asynchronously by SplashScreen
 
-        // Start with splash screen (900x500 for splash, will resize for game)
-        GameApp.start("MazeSahur", 900, 500, 60, false, "Splash");
+        // Start fullscreen to ensure UI/game fill the screen from the first frame.
+        GameApp.start("MazeSahur", 900, 500, 60, true, "Splash");
     }
 }

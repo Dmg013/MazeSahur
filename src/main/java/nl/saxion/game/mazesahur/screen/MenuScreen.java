@@ -10,7 +10,9 @@ import com.badlogic.gdx.graphics.g2d.SpriteBatch;
 import com.badlogic.gdx.graphics.glutils.ShapeRenderer;
 import com.badlogic.gdx.math.Interpolation;
 import com.badlogic.gdx.math.MathUtils;
+import com.badlogic.gdx.math.Matrix4;
 import com.badlogic.gdx.math.Rectangle;
+import com.badlogic.gdx.math.Vector2;
 import com.badlogic.gdx.utils.Align;
 import java.util.function.Consumer;
 import com.badlogic.gdx.Input;
@@ -134,6 +136,13 @@ public class MenuScreen extends ScalableGameScreen {
     // Virtual viewport dimensions
     private static final int VIEWPORT_WIDTH = 1280;
     private static final int VIEWPORT_HEIGHT = 720;
+    private final Matrix4 uiProjection = new Matrix4();
+    private final Vector2 mouseBuffer = new Vector2();
+    private float viewportScale = 1f;
+    private float viewportWidth = VIEWPORT_WIDTH;
+    private float viewportHeight = VIEWPORT_HEIGHT;
+    private float viewportX = 0f;
+    private float viewportY = 0f;
 
     // Colors - Modern dark theme with red accents
     private static final Color BUTTON_COLOR = new Color(0.12f, 0.12f, 0.15f, 0.95f);
@@ -157,6 +166,9 @@ public class MenuScreen extends ScalableGameScreen {
 
     @Override
     public void show() {
+        if (!Gdx.graphics.isFullscreen()) {
+            Gdx.graphics.setFullscreenMode(Gdx.graphics.getDisplayMode());
+        }
         batch = new SpriteBatch();
         shapeRenderer = new ShapeRenderer();
         glyphLayout = new GlyphLayout();
@@ -182,6 +194,7 @@ public class MenuScreen extends ScalableGameScreen {
 
         // Initialize responsive layout
         calculateResponsiveLayout();
+        updateViewportTransform();
 
         System.out.println("[MenuScreen] Enhanced main menu initialized");
     }
@@ -238,12 +251,13 @@ public class MenuScreen extends ScalableGameScreen {
     @Override
     public void resize(int width, int height) {
         super.resize(width, height);
-        // Layout uses fixed virtual viewport dimensions, no need to recalculate
+        updateViewportTransform();
     }
 
     @Override
     public void render(final float delta) {
         super.render(delta);
+        updateViewportTransform();
 
         // Update animations
         animationTime += delta;
@@ -256,12 +270,17 @@ public class MenuScreen extends ScalableGameScreen {
         }
 
         // Clear screen with black background
+        Gdx.gl.glViewport(0, 0, Gdx.graphics.getBackBufferWidth(), Gdx.graphics.getBackBufferHeight());
         Gdx.gl.glClearColor(0.0f, 0.0f, 0.0f, 1.0f);
         Gdx.gl.glClear(GL20.GL_COLOR_BUFFER_BIT | GL20.GL_DEPTH_BUFFER_BIT);
+        Gdx.gl.glViewport((int) viewportX, (int) viewportY, (int) viewportWidth, (int) viewportHeight);
+        batch.setProjectionMatrix(uiProjection);
+        shapeRenderer.setProjectionMatrix(uiProjection);
 
         // Get mouse position (convert from screen to viewport coordinates)
-        int mouseX = Gdx.input.getX();
-        int mouseY = VIEWPORT_HEIGHT - Gdx.input.getY();
+        final Vector2 mousePos = getMouseInViewport();
+        final int mouseX = MathUtils.floor(mousePos.x);
+        final int mouseY = MathUtils.floor(mousePos.y);
 
         // Check hover states
         boolean playHovered = !showMultiplayerForm && playButton.contains(mouseX, mouseY);
@@ -336,6 +355,34 @@ public class MenuScreen extends ScalableGameScreen {
         batch.draw(texture, scaledX, scaledY, scaledWidth, scaledHeight);
     }
 
+    private void updateViewportTransform() {
+        final float windowWidth = Gdx.graphics.getWidth();
+        final float windowHeight = Gdx.graphics.getHeight();
+        final float scaleX = windowWidth / VIEWPORT_WIDTH;
+        final float scaleY = windowHeight / VIEWPORT_HEIGHT;
+        viewportScale = Math.min(scaleX, scaleY);
+        viewportWidth = VIEWPORT_WIDTH * viewportScale;
+        viewportHeight = VIEWPORT_HEIGHT * viewportScale;
+        viewportX = (windowWidth - viewportWidth) / 2f;
+        viewportY = (windowHeight - viewportHeight) / 2f;
+
+        uiProjection.setToOrtho2D(0f, 0f, VIEWPORT_WIDTH, VIEWPORT_HEIGHT);
+        if (batch != null) {
+            batch.setProjectionMatrix(uiProjection);
+        }
+        if (shapeRenderer != null) {
+            shapeRenderer.setProjectionMatrix(uiProjection);
+        }
+    }
+
+    private Vector2 getMouseInViewport() {
+        final float screenX = Gdx.input.getX();
+        final float screenY = Gdx.input.getY();
+        final float virtualX = (screenX - viewportX) / viewportScale;
+        final float virtualY = (Gdx.graphics.getHeight() - screenY - viewportY) / viewportScale;
+        return mouseBuffer.set(virtualX, virtualY);
+    }
+
 
     private void openCharacterSelection(final String screenName, final Consumer<CharacterType> onSelected) {
         final CharacterSelectionScreen selectionScreen = new CharacterSelectionScreen(characterType -> {
@@ -363,7 +410,7 @@ public class MenuScreen extends ScalableGameScreen {
                 },
                 () -> {
                     GameApp.switchScreen("Game");
-                    Gdx.graphics.setWindowedMode(1280, 720);
+                    Gdx.graphics.setFullscreenMode(Gdx.graphics.getDisplayMode());
                 }
             );
             GameApp.addScreen("LoadingGame", loadingScreen);
@@ -418,7 +465,7 @@ public class MenuScreen extends ScalableGameScreen {
                 },
                 () -> {
                     GameApp.switchScreen("Game");
-                    Gdx.graphics.setWindowedMode(1280, 720);
+                    Gdx.graphics.setFullscreenMode(Gdx.graphics.getDisplayMode());
                 }
             );
             GameApp.addScreen("LoadingGameMultiplayer", loadingScreen);

@@ -93,8 +93,8 @@ public class SplashScreen extends ScalableGameScreen {
                 System.out.println("[SplashScreen] Could not set always on top: " + e.getMessage());
             }
 
-            // Center window on screen
-            Gdx.graphics.setWindowedMode(900, 500);
+            // Ensure splash is fullscreen.
+            Gdx.graphics.setFullscreenMode(Gdx.graphics.getDisplayMode());
 
             System.out.println("[SplashScreen] Window set to borderless and centered");
         } catch (Exception e) {
@@ -173,9 +173,9 @@ public class SplashScreen extends ScalableGameScreen {
             // Schedule transition on next frame
             Gdx.app.postRunnable(() -> {
                 System.out.println("[SplashScreen] Executing transition...");
-                // Restore window decorations and resize for menu
+                // Restore window decorations and keep fullscreen for menu.
                 Gdx.graphics.setUndecorated(false);
-                Gdx.graphics.setWindowedMode(1280, 720);
+                Gdx.graphics.setFullscreenMode(Gdx.graphics.getDisplayMode());
 
                 // Create and add menu screen
                 GameApp.addScreen("Menu", new MenuScreen());
