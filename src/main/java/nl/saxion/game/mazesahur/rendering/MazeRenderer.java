@@ -84,6 +84,16 @@ public class MazeRenderer {
     private Model exitMarkerModel;
     private ModelInstance exitMarkerInstance;
     private float exitMarkerScale = 1.0f;
+    private Model portalModel;
+    private ModelInstance portalInstance;
+    private final Vector3 portalPosition = new Vector3();
+    private final Vector3 portalLightPosition = new Vector3();
+    private final Vector3 portalLightColor = new Vector3(0.65f, 0.25f, 0.85f);
+    private float portalLightIntensity = 0.6f;
+    private float portalScale = 1.0f;
+    private float portalYOffset = 0.0f;
+    private float portalRotationY = 0.0f;
+    private boolean portalPlacementValid = false;
 
     private ModelInstance floorInstance;
     private ModelInstance roofInstance;
@@ -214,6 +224,9 @@ public class MazeRenderer {
 
         // Load elevator model
         loadElevatorModel();
+
+        // Load portal model
+        loadPortalModel();
 
         // Initialize footstep manager
         footstepManager = new FootstepManager();
@@ -774,17 +787,19 @@ public class MazeRenderer {
      * Configures the shader with lamp light positions.
      */
     private void setupLampLights() {
-        final int numLights = Math.min(lampLightPositions.size(), 20); // Max 20 lights
+        final int numLampLights = Math.min(lampLightPositions.size(), 20); // Max 20 lights
+        final boolean includePortalLight = portalPlacementValid;
+        final int totalLights = Math.min(numLampLights + (includePortalLight ? 1 : 0), 20);
 
         // Initialize flicker arrays
-        lampFlickerTimers = new float[numLights];
-        lampFlickerIntensities = new float[numLights];
+        lampFlickerTimers = new float[numLampLights];
+        lampFlickerIntensities = new float[numLampLights];
 
-        final Vector3[] positions = new Vector3[numLights];
-        final Vector3[] colors = new Vector3[numLights];
-        final float[] intensities = new float[numLights];
+        final Vector3[] positions = new Vector3[totalLights];
+        final Vector3[] colors = new Vector3[totalLights];
+        final float[] intensities = new float[totalLights];
 
-        for (int i = 0; i < numLights; i++) {
+        for (int i = 0; i < numLampLights; i++) {
             positions[i] = lampLightPositions.get(i);
             colors[i] = new Vector3(1.0f, 0.85f, 0.5f); // Warm yellow lamp light
 
@@ -800,8 +815,15 @@ public class MazeRenderer {
             lampFlickerTimers[i] = (float) (Math.random() * 10.0); // Random start times
         }
 
-        lightingManager.getShader().setPointLights(positions, colors, intensities, numLights);
-        System.out.println("[MazeRenderer] Configured " + numLights + " lamp lights in shader");
+        if (includePortalLight && totalLights > numLampLights) {
+            final int index = numLampLights;
+            positions[index] = new Vector3(portalLightPosition);
+            colors[index] = new Vector3(portalLightColor);
+            intensities[index] = portalLightIntensity;
+        }
+
+        lightingManager.getShader().setPointLights(positions, colors, intensities, totalLights);
+        System.out.println("[MazeRenderer] Configured " + totalLights + " lamp lights in shader");
     }
 
     /**
@@ -889,12 +911,14 @@ public class MazeRenderer {
         }
         flickerUpdateCounter = 0;
 
-        final int numLights = lampFlickerTimers.length;
-        final Vector3[] positions = new Vector3[numLights];
-        final Vector3[] colors = new Vector3[numLights];
-        final float[] intensities = new float[numLights];
+        final int numLampLights = lampFlickerTimers.length;
+        final boolean includePortalLight = portalPlacementValid;
+        final int totalLights = Math.min(numLampLights + (includePortalLight ? 1 : 0), 20);
+        final Vector3[] positions = new Vector3[totalLights];
+        final Vector3[] colors = new Vector3[totalLights];
+        final float[] intensities = new float[totalLights];
 
-        for (int i = 0; i < numLights; i++) {
+        for (int i = 0; i < numLampLights; i++) {
             positions[i] = lampLightPositions.get(i);
             if (lampColorOverride != null) {
                 colors[i] = new Vector3(lampColorOverride);
@@ -957,7 +981,14 @@ public class MazeRenderer {
             }
         }
 
-        lightingManager.getShader().setPointLights(positions, colors, intensities, numLights);
+        if (includePortalLight && totalLights > numLampLights) {
+            final int index = numLampLights;
+            positions[index] = new Vector3(portalLightPosition);
+            colors[index] = new Vector3(portalLightColor);
+            intensities[index] = portalLightIntensity;
+        }
+
+        lightingManager.getShader().setPointLights(positions, colors, intensities, totalLights);
     }
 
     public void setLampColorOverride(final Vector3 color) {
@@ -1194,6 +1225,80 @@ public class MazeRenderer {
             );
             elevatorInstance = new ModelInstance(elevatorModel);
         }
+    }
+
+    private void loadPortalModel() {
+        try {
+            System.out.println("[MazeRenderer] Loading portal GLB model...");
+            final SceneAsset sceneAsset = new GLBLoader().load(
+                Gdx.files.internal("models/ancient_portal_frame.glb")
+            );
+            portalModel = sceneAsset.scene.model;
+            portalInstance = new ModelInstance(portalModel);
+
+            final BoundingBox bounds = new BoundingBox();
+            portalInstance.calculateBoundingBox(bounds);
+            final Vector3 dimensions = new Vector3();
+            bounds.getDimensions(dimensions);
+            if (dimensions.y > 0.01f) {
+                portalScale = 4.0f / dimensions.y;
+                portalYOffset = -bounds.min.y * portalScale;
+            }
+
+            for (final Material mat : portalInstance.materials) {
+                if (!mat.has(ColorAttribute.Emissive)) {
+                    mat.set(ColorAttribute.createEmissive(0.35f, 0.1f, 0.5f, 1f));
+                }
+            }
+
+            System.out.println("[MazeRenderer] Portal model loaded");
+        } catch (Exception e) {
+            System.err.println("[MazeRenderer] Failed to load portal model: " + e.getMessage());
+        }
+    }
+
+    public void updatePortalPlacement(final Vector3 exitPosition) {
+        portalPlacementValid = false;
+        if (portalInstance == null || exitPosition == null) {
+            return;
+        }
+
+        final int[] grid = maze.worldToGrid(exitPosition.x, exitPosition.z);
+        final int gridX = grid[0];
+        final int gridZ = grid[1];
+        final float baseX = gridX * Maze.CELL_SIZE + Maze.CELL_SIZE / 2f;
+        final float baseZ = gridZ * Maze.CELL_SIZE + Maze.CELL_SIZE / 2f;
+        final float inset = 0.1f;
+
+        Vector3 normal = null;
+        if (maze.isWall(gridX, gridZ + 1)) {
+            portalPosition.set(baseX, 0f, (gridZ + 1) * Maze.CELL_SIZE - inset);
+            portalRotationY = 180f;
+            normal = new Vector3(0f, 0f, -1f);
+        } else if (maze.isWall(gridX, gridZ - 1)) {
+            portalPosition.set(baseX, 0f, gridZ * Maze.CELL_SIZE + inset);
+            portalRotationY = 0f;
+            normal = new Vector3(0f, 0f, 1f);
+        } else if (maze.isWall(gridX + 1, gridZ)) {
+            portalPosition.set((gridX + 1) * Maze.CELL_SIZE - inset, 0f, baseZ);
+            portalRotationY = -90f;
+            normal = new Vector3(-1f, 0f, 0f);
+        } else if (maze.isWall(gridX - 1, gridZ)) {
+            portalPosition.set(gridX * Maze.CELL_SIZE + inset, 0f, baseZ);
+            portalRotationY = 90f;
+            normal = new Vector3(1f, 0f, 0f);
+        } else {
+            portalPosition.set(exitPosition.x, 0f, exitPosition.z);
+            portalRotationY = 0f;
+            normal = new Vector3(0f, 0f, 1f);
+        }
+
+        portalLightPosition.set(
+            portalPosition.x + normal.x * 1.2f,
+            portalYOffset + 2.0f,
+            portalPosition.z + normal.z * 1.2f
+        );
+        portalPlacementValid = true;
     }
 
     /**
@@ -1818,33 +1923,48 @@ public class MazeRenderer {
      * Rendert een visuele marker voor de exit locatie.
      */
     public void renderExitMarker(final PerspectiveCamera camera, final Vector3 exitPosition) {
-        // Statische model cache (maak 1x aan)
-        if (exitMarkerModel == null) {
-            final ModelBuilder builder = new ModelBuilder();
-            final Material material = new Material();
-            material.set(ColorAttribute.createDiffuse(0.2f, 1.0f, 0.2f, 1.0f));  // Groen
-            material.set(ColorAttribute.createEmissive(0.0f, 0.8f, 0.0f, 1.0f)); // Gloeiend groen
+        if (portalInstance == null) {
+            // Statische model cache (maak 1x aan)
+            if (exitMarkerModel == null) {
+                final ModelBuilder builder = new ModelBuilder();
+                final Material material = new Material();
+                material.set(ColorAttribute.createDiffuse(0.2f, 1.0f, 0.2f, 1.0f));  // Groen
+                material.set(ColorAttribute.createEmissive(0.0f, 0.8f, 0.0f, 1.0f)); // Gloeiend groen
 
-            exitMarkerModel = builder.createBox(
-                1.5f, 3.0f, 1.5f,  // Grootte: 1.5x3x1.5 (verticale pilaar)
-                material,
-                VertexAttributes.Usage.Position | VertexAttributes.Usage.Normal
-            );
-            exitMarkerInstance = new ModelInstance(exitMarkerModel);
-            exitMarkerScale = 1.0f;
-        }
+                exitMarkerModel = builder.createBox(
+                    1.5f, 3.0f, 1.5f,  // Grootte: 1.5x3x1.5 (verticale pilaar)
+                    material,
+                    VertexAttributes.Usage.Position | VertexAttributes.Usage.Normal
+                );
+                exitMarkerInstance = new ModelInstance(exitMarkerModel);
+                exitMarkerScale = 1.0f;
+            }
 
-        if (exitMarkerInstance == null) {
+            if (exitMarkerInstance == null) {
+                return;
+            }
+
+            exitMarkerInstance.transform.idt();
+            exitMarkerInstance.transform.scale(exitMarkerScale, exitMarkerScale, exitMarkerScale);
+            exitMarkerInstance.transform.translate(exitPosition.x, 0f, exitPosition.z);
+
+            modelBatch.begin(camera);
+            modelBatch.render(exitMarkerInstance, enemyEnvironment);
+            modelBatch.end();
             return;
         }
 
-        // Positioneer en render
-        exitMarkerInstance.transform.idt();
-        exitMarkerInstance.transform.scale(exitMarkerScale, exitMarkerScale, exitMarkerScale);
-        exitMarkerInstance.transform.translate(exitPosition.x, 0f, exitPosition.z);
+        if (!portalPlacementValid) {
+            updatePortalPlacement(exitPosition);
+        }
+
+        portalInstance.transform.idt();
+        portalInstance.transform.translate(portalPosition.x, portalYOffset, portalPosition.z);
+        portalInstance.transform.rotate(Vector3.Y, portalRotationY);
+        portalInstance.transform.scale(portalScale, portalScale, portalScale);
 
         modelBatch.begin(camera);
-        modelBatch.render(exitMarkerInstance, enemyEnvironment);
+        modelBatch.render(portalInstance, enemyEnvironment);
         modelBatch.end();
     }
 
@@ -1988,6 +2108,9 @@ public class MazeRenderer {
         }
         if (exitMarkerModel != null) {
             exitMarkerModel.dispose();
+        }
+        if (portalModel != null) {
+            portalModel.dispose();
         }
         if (espMarkerModel != null) {
             espMarkerModel.dispose();

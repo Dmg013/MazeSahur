@@ -479,6 +479,7 @@ public class GameScreen extends ScalableGameScreen {
             // Update lighting
             final boolean isMoving = player.isMoving();
             lightingManager.updateFlashlight(player.getPosition(), camera.direction, delta, isMoving);
+            mazeRenderer.updatePortalPlacement(exitPosition);
             mazeRenderer.updateLampFlicker(delta);
 
             // Update footsteps
