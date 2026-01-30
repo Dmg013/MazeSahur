@@ -44,6 +44,7 @@ public class ResourceManager {
     private final Map<CharacterType, AnimationController> characterControllers = new EnumMap<>(CharacterType.class);
     private final Map<CharacterType, Float> characterScales = new EnumMap<>(CharacterType.class);
     private final Map<CharacterType, Float> characterFootOffsets = new EnumMap<>(CharacterType.class);
+    private final java.util.List<Texture> characterTextures = new java.util.ArrayList<>(); // Track textures for disposal
     private Texture fallbackTexture;
     private boolean charactersLoaded = false;
 
@@ -293,6 +294,7 @@ public class ResourceManager {
                     Texture.TextureWrap.Repeat
                 );
                 mat.set(TextureAttribute.createDiffuse(diffuseTex));
+                characterTextures.add(diffuseTex); // Track for disposal
             }
 
             final FileHandle normalFile = pickTexture(baseDir, isHair, "normal");
@@ -307,6 +309,7 @@ public class ResourceManager {
                     Texture.TextureWrap.Repeat
                 );
                 mat.set(TextureAttribute.createNormal(normalTex));
+                characterTextures.add(normalTex); // Track for disposal
             }
 
             final FileHandle specFile = pickTexture(baseDir, isHair, "specular");
@@ -321,6 +324,7 @@ public class ResourceManager {
                     Texture.TextureWrap.Repeat
                 );
                 mat.set(TextureAttribute.createSpecular(specTex));
+                characterTextures.add(specTex); // Track for disposal
             }
         }
     }
@@ -535,6 +539,14 @@ public class ResourceManager {
             materialManager.dispose();
             materialManager = null;
         }
+
+        // Dispose character textures
+        for (Texture texture : characterTextures) {
+            if (texture != null) {
+                texture.dispose();
+            }
+        }
+        characterTextures.clear();
 
         // Dispose character models
         for (Model model : characterModels.values()) {
