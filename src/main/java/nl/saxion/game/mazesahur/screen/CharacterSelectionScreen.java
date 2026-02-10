@@ -110,6 +110,7 @@ public class CharacterSelectionScreen extends ScalableGameScreen {
     private final Map<CharacterType, AnimationController> previewControllers = new HashMap<>();
     private final Map<CharacterType, Float> previewScales = new HashMap<>();
     private final Map<CharacterType, Float> previewFootOffsets = new HashMap<>();
+    private final java.util.List<Texture> previewTextures = new java.util.ArrayList<>(); // Track textures for disposal
     private Texture previewFallbackTexture;
 
     // Button textures
@@ -632,6 +633,7 @@ public class CharacterSelectionScreen extends ScalableGameScreen {
                     Texture.TextureWrap.Repeat
                 );
                 mat.set(TextureAttribute.createDiffuse(diffuseTex));
+                previewTextures.add(diffuseTex); // Track for disposal
             }
 
             final FileHandle normalFile = pickTexture(baseDir, isHair, "normal");
@@ -646,6 +648,7 @@ public class CharacterSelectionScreen extends ScalableGameScreen {
                     Texture.TextureWrap.Repeat
                 );
                 mat.set(TextureAttribute.createNormal(normalTex));
+                previewTextures.add(normalTex); // Track for disposal
             }
 
             final FileHandle specFile = pickTexture(baseDir, isHair, "specular");
@@ -660,6 +663,7 @@ public class CharacterSelectionScreen extends ScalableGameScreen {
                     Texture.TextureWrap.Repeat
                 );
                 mat.set(TextureAttribute.createSpecular(specTex));
+                previewTextures.add(specTex); // Track for disposal
             }
         }
     }
@@ -801,6 +805,13 @@ public class CharacterSelectionScreen extends ScalableGameScreen {
         if (confirmButtonTexture != null) {
             confirmButtonTexture.dispose();
         }
+        // Dispose preview textures
+        for (Texture texture : previewTextures) {
+            if (texture != null) {
+                texture.dispose();
+            }
+        }
+        previewTextures.clear();
         // NOTE: Don't dispose previewModels if they came from ResourceManager
         // Only dispose models we loaded ourselves (check if they're different from ResourceManager)
         for (Map.Entry<CharacterType, Model> entry : previewModels.entrySet()) {

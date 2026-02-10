@@ -118,6 +118,7 @@ public class MazeRenderer {
     private final Map<String, Float> characterScales = new java.util.HashMap<>();
     private final Map<String, Float> characterFootOffsets = new java.util.HashMap<>();
     private final Map<String, Vector3> characterRootTranslations = new java.util.HashMap<>();
+    private final List<Texture> characterTextures = new ArrayList<>(); // Track textures for disposal
 
     private float remotePlayerAnimClock = 0f;
     private Environment remotePlayerEnvironment;
@@ -325,6 +326,7 @@ public class MazeRenderer {
                     Texture.TextureWrap.Repeat
                 );
                 mat.set(TextureAttribute.createDiffuse(diffuseTex));
+                characterTextures.add(diffuseTex); // Track for disposal
             }
 
             final FileHandle normalFile = pickTexture(baseDir, isHair, "normal");
@@ -339,6 +341,7 @@ public class MazeRenderer {
                     Texture.TextureWrap.Repeat
                 );
                 mat.set(TextureAttribute.createNormal(normalTex));
+                characterTextures.add(normalTex); // Track for disposal
             }
 
             final FileHandle specFile = pickTexture(baseDir, isHair, "specular");
@@ -353,6 +356,7 @@ public class MazeRenderer {
                     Texture.TextureWrap.Repeat
                 );
                 mat.set(TextureAttribute.createSpecular(specTex));
+                characterTextures.add(specTex); // Track for disposal
             }
         }
     }
@@ -512,13 +516,18 @@ public class MazeRenderer {
     /**
      * Gets the character model for a given character type.
      * Returns DEFAULT model if type not found.
+     * If DEFAULT model is also not found, returns null (should never happen in practice).
      *
      * @param characterType Character type (e.g., "DEFAULT", "BIG_BUSINESS")
-     * @return Character model
+     * @return Character model, or null if neither the requested type nor DEFAULT exists
      */
     private Model getCharacterModel(final String characterType) {
         if (characterType == null || !characterModels.containsKey(characterType)) {
-            return characterModels.get("DEFAULT");
+            final Model defaultModel = characterModels.get("DEFAULT");
+            if (defaultModel == null) {
+                System.err.println("[MazeRenderer] WARNING: DEFAULT character model not found!");
+            }
+            return defaultModel;
         }
         return characterModels.get(characterType);
     }
@@ -1695,6 +1704,10 @@ public class MazeRenderer {
             // Create new instance if needed or if character changed
             if (instance == null || characterChanged) {
                 final Model characterModel = getCharacterModel(characterType);
+                if (characterModel == null) {
+                    System.err.println("[MazeRenderer] ERROR: Could not get character model for " + characterType);
+                    continue; // Skip this player if model is not available
+                }
                 instance = new ModelInstance(characterModel);
                 remotePlayerInstances.put(state.id, instance);
                 remotePlayerCharacterTypes.put(state.id, characterType);
@@ -2118,6 +2131,22 @@ public class MazeRenderer {
         if (espShapeRenderer != null) {
             espShapeRenderer.dispose();
         }
+        if (elevatorPhotoTexture != null) {
+            elevatorPhotoTexture.dispose();
+        }
+        if (photoFrameModel != null) {
+            photoFrameModel.dispose();
+        }
+        if (boostModel != null) {
+            boostModel.dispose();
+        }
+        // Dispose character textures
+        for (Texture texture : characterTextures) {
+            if (texture != null) {
+                texture.dispose();
+            }
+        }
+        characterTextures.clear();
         // Dispose character models
         for (Model model : characterModels.values()) {
             if (model != null) {
